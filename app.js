@@ -95,6 +95,162 @@
     return { x: x, y: y, z: z };
   }
 
+  function pointToFeature(p) {
+    const rad = (p.hue / 180) * Math.PI;
+    const chroma = p.saturation;
+    return {
+      x: Math.cos(rad) * chroma,
+      y: Math.sin(rad) * chroma,
+      z: p.brightness,
+    };
+  }
+
+  function featureDistance2(a, b) {
+    const dx = a.x - b.x;
+    const dy = a.y - b.y;
+    const dz = (a.z - b.z) * 0.85;
+    return dx * dx + dy * dy + dz * dz;
+  }
+
+  function hsvToRgb(hh, ss, vv) {
+    const h = ((hh % 360) + 360) % 360;
+    const c = vv * ss;
+    const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+    const m = vv - c;
+    let r = 0;
+    let g = 0;
+    let b = 0;
+
+    if (h < 60) { r = c; g = x; b = 0; }
+    else if (h < 120) { r = x; g = c; b = 0; }
+    else if (h < 180) { r = 0; g = c; b = x; }
+    else if (h < 240) { r = 0; g = x; b = c; }
+    else if (h < 300) { r = x; g = 0; b = c; }
+    else { r = c; g = 0; b = x; }
+
+    return {
+      r: Math.round((r + m) * 255),
+      g: Math.round((g + m) * 255),
+      b: Math.round((b + m) * 255),
+    };
+  }
+
+  function toHexByte(n) {
+    const s = Math.max(0, Math.min(255, n)).toString(16);
+    return s.length === 1 ? '0' + s : s;
+  }
+
+  function createRng(seed) {
+    let s = (seed >>> 0) || 1;
+    return function () {
+      s = (s + 0x6D2B79F5) >>> 0;
+      let t = Math.imul(s ^ (s >>> 15), 1 | s);
+      t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function buildImagePalette(points, paletteSize, variationSeed) {
+    if (!points.length || paletteSize < 1) return [];
+    const rand = createRng(variationSeed || 1);
+
+    const sorted = points.slice().sort(function (a, b) { return b.count - a.count; });
+    const sampleLimit = Math.min(sorted.length, Math.max(2600, paletteSize * 320));
+    const source = sorted.slice(0, sampleLimit);
+    const features = source.map(pointToFeature);
+    const k = Math.min(paletteSize, source.length);
+    const centers = [];
+    const firstIndex = Math.min(source.length - 1, Math.floor(rand() * Math.min(source.length, Math.max(1, paletteSize * 5))));
+    centers.push({ x: features[firstIndex].x, y: features[firstIndex].y, z: features[firstIndex].z });
+
+    // Deterministic weighted farthest-point init to spread centers across the image's palette.
+    while (centers.length < k) {
+      let bestI = -1;
+      let bestScore = -1;
+      for (let i = 0; i < source.length; i += 1) {
+        const f = features[i];
+        let nearest = Infinity;
+        for (let c = 0; c < centers.length; c += 1) {
+          nearest = Math.min(nearest, featureDistance2(f, centers[c]));
+        }
+        const score = nearest * source[i].count * (0.9 + rand() * 0.2);
+        if (score > bestScore) {
+          bestScore = score;
+          bestI = i;
+        }
+      }
+      if (bestI < 0) break;
+      centers.push({ x: features[bestI].x, y: features[bestI].y, z: features[bestI].z });
+    }
+
+    const assignments = new Array(source.length).fill(0);
+    for (let iter = 0; iter < 10; iter += 1) {
+      const sums = centers.map(function () { return { x: 0, y: 0, z: 0, w: 0 }; });
+
+      for (let i = 0; i < source.length; i += 1) {
+        const f = features[i];
+        let bestK = 0;
+        let bestDist = Infinity;
+        for (let c = 0; c < centers.length; c += 1) {
+          const d = featureDistance2(f, centers[c]);
+          if (d < bestDist) {
+            bestDist = d;
+            bestK = c;
+          }
+        }
+        assignments[i] = bestK;
+        const w = source[i].count;
+        sums[bestK].x += f.x * w;
+        sums[bestK].y += f.y * w;
+        sums[bestK].z += f.z * w;
+        sums[bestK].w += w;
+      }
+
+      for (let c = 0; c < centers.length; c += 1) {
+        if (sums[c].w > 0) {
+          centers[c].x = sums[c].x / sums[c].w;
+          centers[c].y = sums[c].y / sums[c].w;
+          centers[c].z = sums[c].z / sums[c].w;
+        }
+      }
+    }
+
+    const clusters = centers.map(function () {
+      return { x: 0, y: 0, z: 0, w: 0 };
+    });
+    for (let i = 0; i < source.length; i += 1) {
+      const idx = assignments[i];
+      const w = source[i].count;
+      clusters[idx].x += features[i].x * w;
+      clusters[idx].y += features[i].y * w;
+      clusters[idx].z += features[i].z * w;
+      clusters[idx].w += w;
+    }
+
+    const palette = [];
+    for (let c = 0; c < clusters.length; c += 1) {
+      const cl = clusters[c];
+      if (cl.w <= 0) continue;
+      const cx = cl.x / cl.w;
+      const cy = cl.y / cl.w;
+      const cz = Math.max(0, Math.min(1, cl.z / cl.w));
+      const sat = Math.max(0, Math.min(1, Math.sqrt(cx * cx + cy * cy)));
+      let hue = (Math.atan2(cy, cx) * 180) / Math.PI;
+      if (hue < 0) hue += 360;
+      const rgb = hsvToRgb(hue, sat, cz);
+      const hex = '#' + toHexByte(rgb.r) + toHexByte(rgb.g) + toHexByte(rgb.b);
+      palette.push({
+        id: c + '-' + Math.round(hue) + '-' + Math.round(cl.w),
+        color: 'rgb(' + rgb.r + ' ' + rgb.g + ' ' + rgb.b + ')',
+        hex: hex.toUpperCase(),
+        count: Math.round(cl.w),
+      });
+    }
+
+    palette.sort(function (a, b) { return b.count - a.count; });
+    return palette.slice(0, paletteSize);
+  }
+
   function rotate3(x, y, z, rx, ry) {
     const cosY = Math.cos(ry);
     const sinY = Math.sin(ry);
@@ -447,6 +603,7 @@
     const [imageData, setImageData] = useState(null);
     const [graphData, setGraphData] = useState({ points: [], sampled: 0, uniqueBins: 0 });
     const [runtimeError, setRuntimeError] = useState('');
+    const [paletteVariationSeed, setPaletteVariationSeed] = useState(1);
 
     const [settings, setSettings] = useState({
       maxSamples: 18000,
@@ -454,6 +611,7 @@
       hueBins: 64,
       satBins: 20,
       valBins: 20,
+      paletteSize: 6,
       pointScale: 1.2,
       saturationFloor: 0,
       brightnessFloor: 0,
@@ -464,6 +622,36 @@
     const prettyPointCount = useMemo(function () {
       return graphData.points.length.toLocaleString();
     }, [graphData.points.length]);
+
+    const paletteSwatches = useMemo(function () {
+      return buildImagePalette(graphData.points, settings.paletteSize, paletteVariationSeed);
+    }, [graphData.points, settings.paletteSize, paletteVariationSeed]);
+
+    const graphSettings = useMemo(function () {
+      return {
+        maxSamples: settings.maxSamples,
+        sampleStep: settings.sampleStep,
+        hueBins: settings.hueBins,
+        satBins: settings.satBins,
+        valBins: settings.valBins,
+        pointScale: settings.pointScale,
+        saturationFloor: settings.saturationFloor,
+        brightnessFloor: settings.brightnessFloor,
+        cameraDistance: settings.cameraDistance,
+        showGrid: settings.showGrid,
+      };
+    }, [
+      settings.maxSamples,
+      settings.sampleStep,
+      settings.hueBins,
+      settings.satBins,
+      settings.valBins,
+      settings.pointScale,
+      settings.saturationFloor,
+      settings.brightnessFloor,
+      settings.cameraDistance,
+      settings.showGrid,
+    ]);
 
     function setSetting(key, value) {
       setSettings(function (s) {
@@ -495,6 +683,7 @@
 
           setImageData(data);
           setImageName(file.name);
+          setPaletteVariationSeed(1);
           setRuntimeError('');
         } catch (err) {
           setRuntimeError(String(err && err.message ? err.message : err));
@@ -518,12 +707,12 @@
     useEffect(function () {
       if (!imageData) return;
       try {
-        const result = extractColorBins(imageData, settings);
+        const result = extractColorBins(imageData, graphSettings);
         setGraphData(result);
       } catch (err) {
         setRuntimeError(String(err && err.message ? err.message : err));
       }
-    }, [imageData, settings]);
+    }, [imageData, graphSettings]);
 
     return h(
       'div',
@@ -531,7 +720,7 @@
       h(
         'aside',
         { className: 'panel' },
-        h('h1', null, '3D Palette Visualizer'),
+        h('h1', null, '3D Color Palette Visualizer'),
         h('p', null, 'Upload a photo to plot HSV values in 3D. Sphere size shows how often that color bucket appears.'),
 
         h('div', { className: 'control' }, h('label', null, 'Photo'), h('input', { type: 'file', accept: 'image/*', onChange: onUpload })),
@@ -552,7 +741,7 @@
         ),
 
         h('div', { className: 'button-row' },
-          h('button', { onClick: function () { if (imageData) setGraphData(extractColorBins(imageData, settings)); } }, 'Rebuild'),
+          h('button', { onClick: function () { if (imageData) setGraphData(extractColorBins(imageData, graphSettings)); } }, 'Rebuild'),
           h('button', { className: 'secondary', onClick: resetGraph }, 'Clear')
         ),
 
@@ -567,12 +756,67 @@
       ),
 
       h('section', { className: 'viewer' },
-        h(CanvasGraph, {
-          points: graphData.points,
-          pointScale: settings.pointScale,
-          cameraDistance: settings.cameraDistance,
-          showGrid: settings.showGrid,
-        })
+        h('div', { className: 'viewer-layout' },
+          h(CanvasGraph, {
+            points: graphData.points,
+            pointScale: settings.pointScale,
+            cameraDistance: settings.cameraDistance,
+            showGrid: settings.showGrid,
+          }),
+          h('aside', { className: 'palette-column' },
+            h('div', { className: 'palette-title' }, 'Palette'),
+            h(
+              'div',
+              {
+                className: 'palette-swatches',
+                style: { '--palette-count': String(Math.max(1, settings.paletteSize)) },
+              },
+              (paletteSwatches.length ? paletteSwatches : Array.from({ length: settings.paletteSize })).map(function (swatch, i) {
+                const empty = !swatch;
+                return h(
+                  'div',
+                  { key: swatch ? swatch.id : 'placeholder-' + i, className: 'palette-item' },
+                  h('div', {
+                    className: 'palette-swatch',
+                    style: {
+                      background: empty ? 'linear-gradient(150deg, #172433, #12202c)' : swatch.color,
+                    },
+                  }),
+                  h('div', { className: 'palette-label' }, empty ? '--' : swatch.hex)
+                );
+              })
+            ),
+            h('div', { className: 'palette-controls' },
+              h('div', { className: 'palette-size-row' },
+                h('span', { className: 'palette-size-label' }, 'Palette Size'),
+                h('div', { className: 'palette-size-buttons' },
+                  h('button', {
+                    type: 'button',
+                    className: 'palette-btn',
+                    onClick: function () {
+                      setSetting('paletteSize', Math.max(2, settings.paletteSize - 1));
+                    },
+                  }, '-'),
+                  h('span', { className: 'palette-size-value' }, String(settings.paletteSize)),
+                  h('button', {
+                    type: 'button',
+                    className: 'palette-btn',
+                    onClick: function () {
+                      setSetting('paletteSize', Math.min(16, settings.paletteSize + 1));
+                    },
+                  }, '+')
+                )
+              ),
+              h('button', {
+                type: 'button',
+                className: 'palette-regenerate-btn',
+                onClick: function () {
+                  setPaletteVariationSeed(function (v) { return v + 1; });
+                },
+              }, 'Regenerate Palette')
+            )
+          )
+        )
       )
     );
   }
