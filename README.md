@@ -8,7 +8,14 @@ This app visualizes uploaded image colors in a 3D HSV graph:
 
 ## Run
 
-No Node/npm setup is required. Open `index.html` in a browser with internet access (CDN scripts are used).
+No build step is required, but run through a local HTTP server (not `file://`) so preset images can be sampled by canvas:
+
+```bash
+cd "/Users/werd/Desktop/Portfolio Web Apps"
+python3 -m http.server 5173
+```
+
+Then open: `http://localhost:5173`
 
 ## Controls
 
@@ -20,3 +27,15 @@ No Node/npm setup is required. Open `index.html` in a browser with internet acce
 - Min saturation / min brightness filters
 - Camera distance
 - Grid toggle
+- Preset examples strip under the graph (requires files in `./presets/`)
+
+## Preset Images
+
+The app includes a scrollable preset strip and randomly selects one preset when it first loads.
+Add your images in `./presets/` named:
+
+`preset-01.png` through `preset-18.png`
+
+If you open `index.html` directly as `file://...`, browsers block preset pixel sampling for security reasons.
+
+See [presets/README.txt](/Users/werd/Desktop/Portfolio%20Web%20Apps/presets/README.txt) for details.

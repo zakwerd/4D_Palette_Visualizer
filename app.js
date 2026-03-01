@@ -12,6 +12,29 @@
   const useMemo = React.useMemo;
   const useRef = React.useRef;
   const useState = React.useState;
+  const PRESET_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp'];
+  const PRESET_SLOTS = Array.from({ length: 18 }, function (_v, i) {
+    return String(i + 1).padStart(2, '0');
+  });
+  const FALLBACK_PRESET_SVG = [
+    "<svg xmlns='http://www.w3.org/2000/svg' width='1200' height='900' viewBox='0 0 1200 900'>",
+    "<defs>",
+    "<linearGradient id='g1' x1='0' y1='0' x2='1' y2='1'>",
+    "<stop offset='0%' stop-color='#0ab8a1'/>",
+    "<stop offset='35%' stop-color='#0f7db8'/>",
+    "<stop offset='70%' stop-color='#f2b705'/>",
+    "<stop offset='100%' stop-color='#ef476f'/>",
+    "</linearGradient>",
+    "</defs>",
+    "<rect width='1200' height='900' fill='url(#g1)'/>",
+    "<circle cx='250' cy='220' r='190' fill='#ffe38c' opacity='0.7'/>",
+    "<circle cx='890' cy='280' r='220' fill='#84f0cb' opacity='0.55'/>",
+    "<rect x='180' y='520' width='760' height='220' rx='40' fill='#17334d' opacity='0.5'/>",
+    "<path d='M120 700 C300 480, 540 880, 760 650 C930 490, 1080 760, 1160 620' stroke='#ffffff' stroke-width='26' fill='none' opacity='0.55'/>",
+    "</svg>",
+  ].join("");
+  const FALLBACK_PRESET_SRC = 'data:image/svg+xml;utf8,' + encodeURIComponent(FALLBACK_PRESET_SVG);
+  const FALLBACK_PRESET = { name: 'Preset Demo', src: FALLBACK_PRESET_SRC };
 
   function rgbToHsv(r, g, b) {
     const nr = r / 255;
@@ -46,10 +69,20 @@
       const idx = i * 4;
       if (data[idx + 3] < 8) continue;
 
-      const hsv = rgbToHsv(data[idx], data[idx + 1], data[idx + 2]);
+      const r = data[idx];
+      const g = data[idx + 1];
+      const b = data[idx + 2];
+      const hsv = rgbToHsv(r, g, b);
       if (hsv.s < settings.saturationFloor || hsv.v < settings.brightnessFloor) continue;
 
-      samples.push(hsv);
+      samples.push({
+        h: hsv.h,
+        s: hsv.s,
+        v: hsv.v,
+        r: r,
+        g: g,
+        b: b,
+      });
       seen += 1;
     }
 
@@ -61,8 +94,22 @@
       const vBin = Math.min(settings.valBins - 1, Math.floor(c.v * settings.valBins));
       const key = hBin + ':' + sBin + ':' + vBin;
       const existing = bins.get(key);
-      if (existing) existing.count += 1;
-      else bins.set(key, { hBin: hBin, sBin: sBin, vBin: vBin, count: 1 });
+      if (existing) {
+        existing.count += 1;
+        existing.rSum += c.r;
+        existing.gSum += c.g;
+        existing.bSum += c.b;
+      } else {
+        bins.set(key, {
+          hBin: hBin,
+          sBin: sBin,
+          vBin: vBin,
+          count: 1,
+          rSum: c.r,
+          gSum: c.g,
+          bSum: c.b,
+        });
+      }
     }
 
     const points = Array.from(bins.values()).map(function (bin) {
@@ -70,6 +117,9 @@
       const ss = (bin.sBin + 0.5) / settings.satBins;
       const vv = (bin.vBin + 0.5) / settings.valBins;
       const sphere = hsvToSphere(hh, ss, vv);
+      const avgR = Math.round(bin.rSum / bin.count);
+      const avgG = Math.round(bin.gSum / bin.count);
+      const avgB = Math.round(bin.bSum / bin.count);
       return {
         x: sphere.x,
         y: sphere.y,
@@ -78,7 +128,7 @@
         saturation: ss,
         brightness: vv,
         count: bin.count,
-        color: 'hsl(' + Math.round(hh) + ' ' + Math.max(14, ss * 100).toFixed(0) + '% ' + (28 + vv * 58).toFixed(0) + '%)',
+        color: 'rgb(' + avgR + ' ' + avgG + ' ' + avgB + ')',
       };
     });
 
@@ -286,6 +336,77 @@
     ctx.stroke();
   }
 
+  function imageToImageData(img) {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const maxDim = 1200;
+    const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+    canvas.width = Math.max(1, Math.floor(img.width * scale));
+    canvas.height = Math.max(1, Math.floor(img.height * scale));
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    return ctx.getImageData(0, 0, canvas.width, canvas.height);
+  }
+
+  function canSampleImage(src) {
+    return new Promise(function (resolve) {
+      const img = new Image();
+      if (/^https?:\/\//i.test(src)) img.crossOrigin = 'anonymous';
+      img.onload = function () {
+        try {
+          const c = document.createElement('canvas');
+          const ctx = c.getContext('2d', { willReadFrequently: true });
+          c.width = 1;
+          c.height = 1;
+          ctx.drawImage(img, 0, 0, 1, 1);
+          ctx.getImageData(0, 0, 1, 1);
+          resolve(true);
+        } catch (_err) {
+          resolve(false);
+        }
+      };
+      img.onerror = function () {
+        resolve(false);
+      };
+      img.src = src;
+    });
+  }
+
+  function canLoadImage(src) {
+    return new Promise(function (resolve) {
+      const img = new Image();
+      if (/^https?:\/\//i.test(src)) img.crossOrigin = 'anonymous';
+      img.onload = function () { resolve(true); };
+      img.onerror = function () { resolve(false); };
+      img.src = src;
+    });
+  }
+
+  function isFileProtocolPage() {
+    return typeof window !== 'undefined' && window.location && window.location.protocol === 'file:';
+  }
+
+  function isLocalPresetSource(src) {
+    return /^\.?\/?presets\//i.test(src);
+  }
+
+  function resolvePresetSource(slot) {
+    if (isFileProtocolPage()) return Promise.resolve(null);
+
+    const sources = PRESET_EXTENSIONS.map(function (ext) {
+      return './presets/preset-' + slot + '.' + ext;
+    });
+
+    function tryAt(index) {
+      if (index >= sources.length) return Promise.resolve(null);
+      return canLoadImage(sources[index]).then(function (ok) {
+        if (ok) return sources[index];
+        return tryAt(index + 1);
+      });
+    }
+
+    return tryAt(0);
+  }
+
   function CanvasGraph(props) {
     const points = props.points;
     const pointScale = props.pointScale;
@@ -421,10 +542,8 @@
       for (let i = 0; i < projected.length; i += 1) {
         const p = projected[i];
         const sizeFactor = Math.max(0.4, pointScale);
-        const depthBoost = Math.min(1.65, 1 / Math.max(0.72, p.depth));
         const normalized = p.count / maxCount;
-        const proportional = Math.pow(normalized, 0.42);
-        let size = (2.1 + proportional * 16.0) * sizeFactor * depthBoost;
+        let size = (1.5 + normalized * 19.5) * sizeFactor;
         const minSize = 1.5 * sizeFactor;
         const maxSize = 21 * sizeFactor;
         size = Math.max(minSize, Math.min(maxSize, size));
@@ -432,14 +551,9 @@
 
         ctx.beginPath();
         ctx.fillStyle = p.color;
-        ctx.globalAlpha = 0.92;
+        ctx.globalAlpha = 1;
         ctx.arc(p.x, p.y, size, 0, Math.PI * 2);
         ctx.fill();
-
-        ctx.globalAlpha = 0.2;
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 0.6;
-        ctx.stroke();
       }
 
       ctx.globalAlpha = 1;
@@ -604,15 +718,17 @@
     const [graphData, setGraphData] = useState({ points: [], sampled: 0, uniqueBins: 0 });
     const [runtimeError, setRuntimeError] = useState('');
     const [paletteVariationSeed, setPaletteVariationSeed] = useState(1);
+    const [selectedPresetIndex, setSelectedPresetIndex] = useState(-1);
+    const [availablePresets, setAvailablePresets] = useState([FALLBACK_PRESET]);
 
     const [settings, setSettings] = useState({
-      maxSamples: 18000,
-      sampleStep: 1,
-      hueBins: 64,
-      satBins: 20,
-      valBins: 20,
+      maxSamples: 59000,
+      sampleStep: 16,
+      hueBins: 28,
+      satBins: 23,
+      valBins: 10,
       paletteSize: 6,
-      pointScale: 1.2,
+      pointScale: 0.85,
       saturationFloor: 0,
       brightnessFloor: 0,
       cameraDistance: 0.9,
@@ -661,6 +777,65 @@
       });
     }
 
+    function loadPreset(preset, visibleIndex, suppressError) {
+      if (!preset) return;
+      setSelectedPresetIndex(visibleIndex);
+
+      if (isFileProtocolPage() && isLocalPresetSource(preset.src)) {
+        if (!suppressError) {
+          setRuntimeError(
+            'Preset images cannot be sampled over file://. Start a local server and open http://localhost:5173 (example: python3 -m http.server 5173).'
+          );
+        }
+        return;
+      }
+
+      function applyImage(img, cleanupUrl) {
+        try {
+          const data = imageToImageData(img);
+          setImageData(data);
+          setImageName(preset.name);
+          setPaletteVariationSeed(1);
+          setRuntimeError('');
+        } catch (err) {
+          if (!suppressError) {
+            setRuntimeError(
+              'Preset image cannot be sampled due browser CORS/security restrictions. Serve this app over http://localhost instead of file://.'
+            );
+          }
+        } finally {
+          if (cleanupUrl) URL.revokeObjectURL(cleanupUrl);
+        }
+      }
+
+      function loadViaImage(url, cleanupUrl) {
+        const img = new Image();
+        if (/^https?:\/\//i.test(url)) img.crossOrigin = 'anonymous';
+        img.onload = function () {
+          applyImage(img, cleanupUrl);
+        };
+        img.onerror = function () {
+          if (cleanupUrl) URL.revokeObjectURL(cleanupUrl);
+          if (!suppressError) setRuntimeError('Could not load preset image: ' + preset.src);
+        };
+        img.src = url;
+      }
+
+      fetch(preset.src, { mode: 'cors' })
+        .then(function (res) {
+          if (!res.ok) throw new Error('fetch failed');
+          return res.blob();
+        })
+        .then(function (blob) {
+          if (!blob || !blob.size) throw new Error('empty blob');
+          const objectUrl = URL.createObjectURL(blob);
+          loadViaImage(objectUrl, objectUrl);
+        })
+        .catch(function () {
+          loadViaImage(preset.src, null);
+        });
+    }
+
     function onUpload(event) {
       const file = event.target.files && event.target.files[0];
       if (!file) return;
@@ -670,19 +845,10 @@
 
       img.onload = function () {
         try {
-          const canvas = document.createElement('canvas');
-          const ctx = canvas.getContext('2d', { willReadFrequently: true });
-          const maxDim = 1200;
-          const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
-
-          canvas.width = Math.max(1, Math.floor(img.width * scale));
-          canvas.height = Math.max(1, Math.floor(img.height * scale));
-
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
-
+          const data = imageToImageData(img);
           setImageData(data);
           setImageName(file.name);
+          setSelectedPresetIndex(-1);
           setPaletteVariationSeed(1);
           setRuntimeError('');
         } catch (err) {
@@ -699,6 +865,31 @@
 
       img.src = url;
     }
+
+    useEffect(function () {
+      let cancelled = false;
+      Promise.all(PRESET_SLOTS.map(function (slot) {
+        return resolvePresetSource(slot).then(function (src) {
+          if (!src) return null;
+          return { name: 'Preset ' + slot, src: src };
+        });
+      })).then(function (resolved) {
+        if (cancelled) return;
+        const valid = resolved.filter(Boolean);
+        setAvailablePresets([FALLBACK_PRESET].concat(valid));
+      });
+      return function () {
+        cancelled = true;
+      };
+    }, []);
+
+    useEffect(function () {
+      if (!availablePresets.length) return;
+      if (imageData) return;
+      const randomIndex = Math.floor(Math.random() * availablePresets.length);
+      setSelectedPresetIndex(randomIndex);
+      loadPreset(availablePresets[randomIndex], randomIndex, true);
+    }, [availablePresets, imageData]);
 
     function resetGraph() {
       setGraphData({ points: [], sampled: 0, uniqueBins: 0 });
@@ -815,6 +1006,30 @@
                 },
               }, 'Regenerate Palette')
             )
+          )
+        ),
+        h('div', { className: 'preset-strip' },
+          h('div', { className: 'preset-strip-head' }, 'Preset Examples'),
+          h('div', { className: 'preset-track' },
+            availablePresets.map(function (preset, i) {
+              return h(
+                'button',
+                {
+                  key: preset.src,
+                  type: 'button',
+                  className: 'preset-thumb-btn' + (selectedPresetIndex === i ? ' active' : ''),
+                  onClick: function () { loadPreset(preset, i, false); },
+                  title: preset.name,
+                },
+                h('img', {
+                  className: 'preset-thumb-img',
+                  src: preset.src,
+                  alt: preset.name,
+                  loading: 'lazy',
+                }),
+                h('span', { className: 'preset-thumb-label' }, preset.name)
+              );
+            })
           )
         )
       )
