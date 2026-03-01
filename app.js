@@ -185,6 +185,10 @@
     };
   }
 
+  function normalizeHue(h) {
+    return ((h % 360) + 360) % 360;
+  }
+
   function toHexByte(n) {
     const s = Math.max(0, Math.min(255, n)).toString(16);
     return s.length === 1 ? '0' + s : s;
@@ -412,14 +416,34 @@
     const pointScale = props.pointScale;
     const cameraDistance = props.cameraDistance;
     const showGrid = props.showGrid;
+    const hueResetToken = props.hueResetToken;
+    const externalHueShiftDeg = props.hueShiftDeg;
+    const onHueShiftChange = props.onHueShiftChange;
+    const miniImageSrc = props.miniImageSrc;
 
     const canvasRef = useRef(null);
     const wrapRef = useRef(null);
     const projectedRef = useRef([]);
-    const [view, setView] = useState({ rx: -0.55, ry: 0.75, zoom: 0.9 });
+    const [view, setView] = useState(function () {
+      return {
+        rx: (Math.random() * 2.4) - 1.2,
+        ry: Math.random() * Math.PI * 2,
+        zoom: 0.9,
+      };
+    });
+    const [hueShiftDeg, setHueShiftDeg] = useState(0);
     const [autoRotate, setAutoRotate] = useState(false);
     const [hover, setHover] = useState(null);
+    const [miniViewerOpen, setMiniViewerOpen] = useState(false);
     const dragRef = useRef({ active: false, x: 0, y: 0 });
+    const wheelDragRef = useRef({ active: false });
+    const wheelUiRef = useRef(null);
+
+    function updateHueShift(nextDeg) {
+      const normalized = normalizeHue(nextDeg);
+      setHueShiftDeg(normalized);
+      if (onHueShiftChange) onHueShiftChange(normalized);
+    }
 
     useEffect(function () {
       function onResize() {
@@ -448,6 +472,19 @@
         setHover(null);
       }
     }, [points.length]);
+
+    useEffect(function () {
+      setHueShiftDeg(0);
+    }, [hueResetToken]);
+
+    useEffect(function () {
+      setMiniViewerOpen(false);
+    }, [hueResetToken]);
+
+    useEffect(function () {
+      if (typeof externalHueShiftDeg !== 'number') return;
+      setHueShiftDeg(normalizeHue(externalHueShiftDeg));
+    }, [externalHueShiftDeg]);
 
     useEffect(function () {
       if (!autoRotate) return;
@@ -515,15 +552,18 @@
       }
 
       const projected = points.map(function (p) {
+        const shiftedHue = normalizeHue(p.hue + hueShiftDeg);
+        const shiftedRgb = hsvToRgb(shiftedHue, p.saturation, p.brightness);
+        const shiftedColor = 'rgb(' + shiftedRgb.r + ' ' + shiftedRgb.g + ' ' + shiftedRgb.b + ')';
         const pr = toWorld(p.x, p.y, p.z);
         return {
           x: pr.x,
           y: pr.y,
           z: pr.z,
           depth: pr.depth,
-          color: p.color,
+          color: shiftedColor,
           count: p.count,
-          hue: p.hue,
+          hue: shiftedHue,
           saturation: p.saturation,
           brightness: p.brightness,
           size: 1,
@@ -556,6 +596,123 @@
         ctx.fill();
       }
 
+      // 2D hue wheel inset: angle = hue, radius = saturation, point alpha/size influenced by value/count.
+      if (points.length) {
+        const insetRadius = Math.max(52, Math.min(82, Math.floor(Math.min(width, height) * 0.12)));
+        const insetPadding = 22;
+        const insetCx = width - insetRadius - insetPadding;
+        const insetCy = height - insetRadius - insetPadding;
+        const plotRadius = insetRadius - 10;
+        const controlRadius = insetRadius + 18;
+        const handleAngle = (normalizeHue(hueShiftDeg) / 180) * Math.PI;
+        const handleRadius = 7;
+        const handleX = insetCx + Math.cos(handleAngle) * controlRadius;
+        const handleY = insetCy + Math.sin(handleAngle) * controlRadius;
+        const resetR = 10;
+        const resetX = width - (resetR + 8);
+        const resetY = height - (resetR + 8);
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(insetCx, insetCy, insetRadius, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(30, 28, 33, 0.92)';
+        ctx.fill();
+        ctx.lineWidth = 1.2;
+        ctx.strokeStyle = 'rgba(130, 169, 201, 0.45)';
+        ctx.stroke();
+
+        if (typeof ctx.createConicGradient === 'function') {
+          const hueRing = ctx.createConicGradient(0, insetCx, insetCy);
+          hueRing.addColorStop(0 / 6, '#ff0000');
+          hueRing.addColorStop(1 / 6, '#ffff00');
+          hueRing.addColorStop(2 / 6, '#00ff00');
+          hueRing.addColorStop(3 / 6, '#00ffff');
+          hueRing.addColorStop(4 / 6, '#0000ff');
+          hueRing.addColorStop(5 / 6, '#ff00ff');
+          hueRing.addColorStop(1, '#ff0000');
+          ctx.beginPath();
+          ctx.arc(insetCx, insetCy, insetRadius - 3, 0, Math.PI * 2);
+          ctx.lineWidth = 4;
+          ctx.strokeStyle = hueRing;
+          ctx.stroke();
+        }
+
+        ctx.beginPath();
+        ctx.arc(insetCx, insetCy, plotRadius, 0, Math.PI * 2);
+        ctx.clip();
+
+        for (let i = 0; i < points.length; i += 1) {
+          const p = points[i];
+          const shiftedHue = normalizeHue(p.hue + hueShiftDeg);
+          const shiftedRgb = hsvToRgb(shiftedHue, p.saturation, p.brightness);
+          const shiftedColor = 'rgb(' + shiftedRgb.r + ' ' + shiftedRgb.g + ' ' + shiftedRgb.b + ')';
+          const angle = (shiftedHue / 360) * Math.PI * 2;
+          const radius = Math.max(0, Math.min(1, p.saturation)) * plotRadius;
+          const px = insetCx + Math.cos(angle) * radius;
+          const py = insetCy + Math.sin(angle) * radius;
+          const localNorm = p.count / maxCount;
+          const dotSize = 0.8 + Math.pow(localNorm, 0.5) * 5.2;
+
+          ctx.beginPath();
+          ctx.fillStyle = shiftedColor;
+          ctx.globalAlpha = 0.25 + (Math.max(0, Math.min(1, p.brightness)) * 0.75);
+          ctx.arc(px, py, dotSize, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+
+        ctx.globalAlpha = 0.55;
+        ctx.strokeStyle = 'rgba(238, 243, 250, 0.75)';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.arc(insetCx, insetCy, controlRadius, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.globalAlpha = 0.98;
+        ctx.fillStyle = 'rgba(226, 232, 241, 0.98)';
+        ctx.beginPath();
+        ctx.arc(handleX, handleY, handleRadius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(31, 44, 62, 0.9)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        ctx.globalAlpha = 0.96;
+        ctx.fillStyle = 'rgba(22, 42, 63, 0.95)';
+        ctx.strokeStyle = 'rgba(117, 155, 194, 0.92)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(resetX, resetY, resetR, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        // Reset icon (curved arrow)
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = '#d8deea';
+        ctx.lineWidth = 1.3;
+        ctx.beginPath();
+        ctx.arc(resetX, resetY, 5.2, Math.PI * 0.28, Math.PI * 1.72);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(resetX + 4.6, resetY - 2.8);
+        ctx.lineTo(resetX + 2.0, resetY - 3.3);
+        ctx.lineTo(resetX + 3.2, resetY - 0.8);
+        ctx.fillStyle = '#d8deea';
+        ctx.fill();
+
+        wheelUiRef.current = {
+          cx: insetCx,
+          cy: insetCy,
+          controlRadius: controlRadius,
+          handleX: handleX,
+          handleY: handleY,
+          handleRadius: handleRadius,
+          resetButton: { x: resetX, y: resetY, r: resetR },
+        };
+      } else {
+        wheelUiRef.current = null;
+      }
+
       ctx.globalAlpha = 1;
 
       ctx.fillStyle = '#8ba2b8';
@@ -565,7 +722,7 @@
       ctx.fillText('Saturation = radial distance', 16, height - 8);
 
       projectedRef.current = projected;
-    }, [points, pointScale, cameraDistance, showGrid, view]);
+    }, [points, pointScale, cameraDistance, showGrid, view, hueShiftDeg]);
 
     function updateHoverFromEvent(e) {
       const canvas = canvasRef.current;
@@ -610,6 +767,39 @@
     }
 
     function onPointerDown(e) {
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const rect = canvas.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+        const ui = wheelUiRef.current;
+        if (ui) {
+          const dxh = mx - ui.handleX;
+          const dyh = my - ui.handleY;
+          const handleHit = (dxh * dxh + dyh * dyh) <= Math.pow(ui.handleRadius + 4, 2);
+          const distCenter = Math.hypot(mx - ui.cx, my - ui.cy);
+          const ringHit = Math.abs(distCenter - ui.controlRadius) <= 10;
+          const dResetX = mx - ui.resetButton.x;
+          const dResetY = my - ui.resetButton.y;
+          const inReset = (dResetX * dResetX + dResetY * dResetY) <= Math.pow(ui.resetButton.r + 3, 2);
+
+          if (inReset) {
+            updateHueShift(0);
+            setHover(null);
+            return;
+          }
+
+          if (handleHit || ringHit) {
+            const angle = Math.atan2(my - ui.cy, mx - ui.cx);
+            updateHueShift((angle * 180) / Math.PI);
+            wheelDragRef.current.active = true;
+            if (canvas.setPointerCapture && e.pointerId != null) canvas.setPointerCapture(e.pointerId);
+            setHover(null);
+            return;
+          }
+        }
+      }
+
       setAutoRotate(false);
       dragRef.current.active = true;
       dragRef.current.x = e.clientX;
@@ -618,6 +808,20 @@
     }
 
     function onPointerMove(e) {
+      if (wheelDragRef.current.active) {
+        const ui = wheelUiRef.current;
+        const canvas = canvasRef.current;
+        if (ui && canvas) {
+          const rect = canvas.getBoundingClientRect();
+          const mx = e.clientX - rect.left;
+          const my = e.clientY - rect.top;
+          const angle = Math.atan2(my - ui.cy, mx - ui.cx);
+          updateHueShift((angle * 180) / Math.PI);
+          setHover(null);
+        }
+        return;
+      }
+
       updateHoverFromEvent(e);
       if (!dragRef.current.active) return;
       const dx = e.clientX - dragRef.current.x;
@@ -634,10 +838,12 @@
     }
 
     function onPointerUp() {
+      wheelDragRef.current.active = false;
       dragRef.current.active = false;
     }
 
     function onPointerLeave() {
+      wheelDragRef.current.active = false;
       dragRef.current.active = false;
       setHover(null);
     }
@@ -675,6 +881,51 @@
         onWheel: onWheel,
         onDoubleClick: onDoubleClick,
       }),
+      miniImageSrc
+        ? h(
+          'button',
+          {
+            type: 'button',
+            className: 'mini-viewer-btn',
+            onClick: function () { setMiniViewerOpen(true); },
+            title: 'Open image preview',
+          },
+          h('img', {
+            className: 'mini-viewer-image',
+            src: miniImageSrc,
+            alt: 'Selected source preview',
+            style: { filter: 'hue-rotate(' + hueShiftDeg.toFixed(1) + 'deg)' },
+          })
+        )
+        : null,
+      miniViewerOpen && miniImageSrc
+        ? h(
+          'div',
+          {
+            className: 'mini-viewer-modal',
+            onClick: function () { setMiniViewerOpen(false); },
+          },
+          h(
+            'div',
+            {
+              className: 'mini-viewer-modal-inner',
+              onClick: function (e) { e.stopPropagation(); },
+            },
+            h('button', {
+              type: 'button',
+              className: 'mini-viewer-close',
+              onClick: function () { setMiniViewerOpen(false); },
+              title: 'Close',
+            }, 'Close'),
+            h('img', {
+              className: 'mini-viewer-modal-image',
+              src: miniImageSrc,
+              alt: 'Expanded selected source',
+              style: { filter: 'hue-rotate(' + hueShiftDeg.toFixed(1) + 'deg)' },
+            })
+          )
+        )
+        : null,
       hover
         ? h(
           'div',
@@ -720,6 +971,13 @@
     const [paletteVariationSeed, setPaletteVariationSeed] = useState(1);
     const [selectedPresetIndex, setSelectedPresetIndex] = useState(-1);
     const [availablePresets, setAvailablePresets] = useState([FALLBACK_PRESET]);
+    const [presetsResolved, setPresetsResolved] = useState(false);
+    const [hueResetToken, setHueResetToken] = useState(0);
+    const [hueShiftDeg, setHueShiftDeg] = useState(0);
+    const [miniImageSrc, setMiniImageSrc] = useState(FALLBACK_PRESET.src);
+    const presetTrackRef = useRef(null);
+    const presetButtonRefs = useRef([]);
+    const uploadedMiniSrcRef = useRef(null);
 
     const [settings, setSettings] = useState({
       maxSamples: 59000,
@@ -732,16 +990,27 @@
       saturationFloor: 0,
       brightnessFloor: 0,
       cameraDistance: 0.9,
-      showGrid: true,
+      showGrid: false,
     });
 
     const prettyPointCount = useMemo(function () {
       return graphData.points.length.toLocaleString();
     }, [graphData.points.length]);
 
+    const shiftedGraphPoints = useMemo(function () {
+      return graphData.points.map(function (p) {
+        const shiftedHue = normalizeHue(p.hue + hueShiftDeg);
+        const shiftedRgb = hsvToRgb(shiftedHue, p.saturation, p.brightness);
+        return Object.assign({}, p, {
+          hue: shiftedHue,
+          color: 'rgb(' + shiftedRgb.r + ' ' + shiftedRgb.g + ' ' + shiftedRgb.b + ')',
+        });
+      });
+    }, [graphData.points, hueShiftDeg]);
+
     const paletteSwatches = useMemo(function () {
-      return buildImagePalette(graphData.points, settings.paletteSize, paletteVariationSeed);
-    }, [graphData.points, settings.paletteSize, paletteVariationSeed]);
+      return buildImagePalette(shiftedGraphPoints, settings.paletteSize, paletteVariationSeed);
+    }, [shiftedGraphPoints, settings.paletteSize, paletteVariationSeed]);
 
     const graphSettings = useMemo(function () {
       return {
@@ -777,6 +1046,17 @@
       });
     }
 
+    function updateMiniImageSrc(src, keepBlobUrl) {
+      if (uploadedMiniSrcRef.current && uploadedMiniSrcRef.current !== src) {
+        URL.revokeObjectURL(uploadedMiniSrcRef.current);
+        uploadedMiniSrcRef.current = null;
+      }
+      setMiniImageSrc(src || '');
+      if (keepBlobUrl && /^blob:/i.test(src || '')) {
+        uploadedMiniSrcRef.current = src;
+      }
+    }
+
     function loadPreset(preset, visibleIndex, suppressError) {
       if (!preset) return;
       setSelectedPresetIndex(visibleIndex);
@@ -795,6 +1075,9 @@
           const data = imageToImageData(img);
           setImageData(data);
           setImageName(preset.name);
+          updateMiniImageSrc(preset.src, false);
+          setHueShiftDeg(0);
+          setHueResetToken(function (n) { return n + 1; });
           setPaletteVariationSeed(1);
           setRuntimeError('');
         } catch (err) {
@@ -848,13 +1131,14 @@
           const data = imageToImageData(img);
           setImageData(data);
           setImageName(file.name);
+          updateMiniImageSrc(url, true);
+          setHueShiftDeg(0);
+          setHueResetToken(function (n) { return n + 1; });
           setSelectedPresetIndex(-1);
           setPaletteVariationSeed(1);
           setRuntimeError('');
         } catch (err) {
           setRuntimeError(String(err && err.message ? err.message : err));
-        } finally {
-          URL.revokeObjectURL(url);
         }
       };
 
@@ -867,6 +1151,15 @@
     }
 
     useEffect(function () {
+      return function () {
+        if (uploadedMiniSrcRef.current) {
+          URL.revokeObjectURL(uploadedMiniSrcRef.current);
+          uploadedMiniSrcRef.current = null;
+        }
+      };
+    }, []);
+
+    useEffect(function () {
       let cancelled = false;
       Promise.all(PRESET_SLOTS.map(function (slot) {
         return resolvePresetSource(slot).then(function (src) {
@@ -877,6 +1170,7 @@
         if (cancelled) return;
         const valid = resolved.filter(Boolean);
         setAvailablePresets([FALLBACK_PRESET].concat(valid));
+        setPresetsResolved(true);
       });
       return function () {
         cancelled = true;
@@ -884,12 +1178,32 @@
     }, []);
 
     useEffect(function () {
+      if (!presetsResolved) return;
       if (!availablePresets.length) return;
       if (imageData) return;
-      const randomIndex = Math.floor(Math.random() * availablePresets.length);
+      const localPresetIndices = [];
+      for (let i = 0; i < availablePresets.length; i += 1) {
+        if (isLocalPresetSource(availablePresets[i].src)) localPresetIndices.push(i);
+      }
+      const randomPool = localPresetIndices.length
+        ? localPresetIndices
+        : availablePresets.map(function (_preset, i) { return i; });
+      const randomIndex = randomPool[Math.floor(Math.random() * randomPool.length)];
       setSelectedPresetIndex(randomIndex);
       loadPreset(availablePresets[randomIndex], randomIndex, true);
-    }, [availablePresets, imageData]);
+    }, [availablePresets, imageData, presetsResolved]);
+
+    useEffect(function () {
+      if (selectedPresetIndex < 0) return;
+      const track = presetTrackRef.current;
+      const selectedButton = presetButtonRefs.current[selectedPresetIndex];
+      if (!track || !selectedButton) return;
+
+      const left = selectedButton.offsetLeft - ((track.clientWidth - selectedButton.clientWidth) / 2);
+      const maxLeft = Math.max(0, track.scrollWidth - track.clientWidth);
+      const target = Math.max(0, Math.min(maxLeft, left));
+      track.scrollTo({ left: target, behavior: 'smooth' });
+    }, [selectedPresetIndex, availablePresets.length]);
 
     function resetGraph() {
       setGraphData({ points: [], sampled: 0, uniqueBins: 0 });
@@ -953,6 +1267,10 @@
             pointScale: settings.pointScale,
             cameraDistance: settings.cameraDistance,
             showGrid: settings.showGrid,
+            hueResetToken: hueResetToken,
+            hueShiftDeg: hueShiftDeg,
+            onHueShiftChange: setHueShiftDeg,
+            miniImageSrc: miniImageSrc,
           }),
           h('aside', { className: 'palette-column' },
             h('div', { className: 'palette-title' }, 'Palette'),
@@ -1010,12 +1328,13 @@
         ),
         h('div', { className: 'preset-strip' },
           h('div', { className: 'preset-strip-head' }, 'Preset Examples'),
-          h('div', { className: 'preset-track' },
+          h('div', { className: 'preset-track', ref: presetTrackRef },
             availablePresets.map(function (preset, i) {
               return h(
                 'button',
                 {
                   key: preset.src,
+                  ref: function (el) { presetButtonRefs.current[i] = el; },
                   type: 'button',
                   className: 'preset-thumb-btn' + (selectedPresetIndex === i ? ' active' : ''),
                   onClick: function () { loadPreset(preset, i, false); },
