@@ -34,7 +34,7 @@ Then open: `http://localhost:5173`
 The app includes a scrollable preset strip and randomly selects one preset when it first loads.
 Add your images in `./presets/` named:
 
-`preset-01.png` through `preset-18.png`
+`preset-01.png` through `preset-23.png`
 
 If you open `index.html` directly as `file://...`, browsers block preset pixel sampling for security reasons.
 

@@ -13,7 +13,7 @@
   const useRef = React.useRef;
   const useState = React.useState;
   const PRESET_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp'];
-  const PRESET_SLOTS = Array.from({ length: 18 }, function (_v, i) {
+  const PRESET_SLOTS = Array.from({ length: 23 }, function (_v, i) {
     return String(i + 1).padStart(2, '0');
   });
   const FALLBACK_PRESET_SVG = [
@@ -881,6 +881,14 @@
         onWheel: onWheel,
         onDoubleClick: onDoubleClick,
       }),
+      h(
+        'a',
+        {
+          href: 'https://juicedup.cargo.site/',
+          className: 'back-juice-link',
+        },
+        'Back to JUICE'
+      ),
       miniImageSrc
         ? h(
           'button',
@@ -985,7 +993,7 @@
       hueBins: 28,
       satBins: 23,
       valBins: 10,
-      paletteSize: 6,
+      paletteSize: 8,
       pointScale: 0.85,
       saturationFloor: 0,
       brightnessFloor: 0,

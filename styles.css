@@ -130,6 +130,26 @@ body {
   box-shadow: 0 8px 18px rgba(0, 0, 0, 0.35);
 }
 
+.back-juice-link {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  right: auto;
+  z-index: 40;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(157, 189, 217, 0.55);
+  border-radius: 8px;
+  background: rgba(16, 30, 45, 0.9);
+  color: #dce9f5;
+  text-decoration: none;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 7px 10px;
+}
+
 .mini-viewer-btn {
   position: absolute;
   top: 12px;
