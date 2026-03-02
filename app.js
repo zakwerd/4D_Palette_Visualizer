@@ -34,12 +34,13 @@
     "</svg>",
   ].join("");
   const FALLBACK_PRESET_SRC = 'data:image/svg+xml;utf8,' + encodeURIComponent(FALLBACK_PRESET_SVG);
-  const FALLBACK_PRESET = { name: 'Preset Demo', src: FALLBACK_PRESET_SRC };
-  const DATA_CACHE_BUSTER = '2026-03-02-basquiat-rescrape-1';
+  const FALLBACK_PRESET = { name: 'Preset Demo', src: FALLBACK_PRESET_SRC, isDemo: true };
+  const DATA_CACHE_BUSTER = '2026-03-02-kandinsky-1';
   const ARTIST_OPTIONS = [
     { id: 'basquiat', label: 'Basquiat', searchName: 'Jean-Michel Basquiat', dataPath: './data/basquait-palettes.json' },
-    { id: 'vangogh', label: 'Van Gogh', searchName: 'Vincent van Gogh', dataPath: './data/van-gogh-palettes.json' },
     { id: 'cezanne', label: 'Cezanne', searchName: 'Paul Cezanne', dataPath: './data/cezanne-palettes.json' },
+    { id: 'kandinsky', label: 'Kandinsky', searchName: 'Wassily Kandinsky', dataPath: './data/kandinsky-palettes.json' },
+    { id: 'vangogh', label: 'Van Gogh', searchName: 'Vincent van Gogh', dataPath: './data/van-gogh-palettes.json' },
   ];
   const DEFAULT_ARTIST_BLURBS = {
     basquiat: {
@@ -53,6 +54,10 @@
     cezanne: {
       title: "Cezanne's Palettes:",
       body: "Cézanne’s palettes are structured, modulated, and architectonic. He builds form through interlocking planes of color-cool blues and greens balancing warm ochres, siennas, and muted reds-allowing hue shifts to model depth instead of relying on line or heavy shadow. Rather than dramatic contrast, he favors tonal variation and subtle temperature changes, letting strokes accumulate into stable, geometric harmony. His color is constructive: patches of pigment operate like facets, turning apples, mountains, and figures into enduring arrangements of light and structure.",
+    },
+    kandinsky: {
+      title: "Kandinsky's Palettes:",
+      body: "Kandinsky’s color language is abstract, musical, and structural. His palettes move between luminous primaries, dark anchors, and rhythmic contrasts, using color as an autonomous force rather than natural description. Across years, his work shifts from expressive washes to sharper geometric orchestration while preserving chromatic tension and motion.",
     },
   };
 
@@ -374,6 +379,70 @@
     canvas.height = Math.max(1, Math.floor(img.height * scale));
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
     return ctx.getImageData(0, 0, canvas.width, canvas.height);
+  }
+
+  function buildRandomDemoPreset() {
+    const w = 1200;
+    const h = 900;
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    canvas.width = w;
+    canvas.height = h;
+
+    const hueA = Math.floor(Math.random() * 360);
+    const hueB = normalizeHue(hueA + 55 + Math.random() * 180);
+    const hueC = normalizeHue(hueA + 150 + Math.random() * 120);
+
+    const grad = ctx.createLinearGradient(0, 0, w, h);
+    grad.addColorStop(0, 'hsl(' + hueA + ' 78% 38%)');
+    grad.addColorStop(0.45, 'hsl(' + hueB + ' 74% 34%)');
+    grad.addColorStop(1, 'hsl(' + hueC + ' 80% 44%)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+
+    const layers = 10 + Math.floor(Math.random() * 6);
+    for (let i = 0; i < layers; i += 1) {
+      const hShift = normalizeHue(hueA + (i * 31) + (Math.random() * 70));
+      const sat = 48 + Math.random() * 44;
+      const light = 30 + Math.random() * 42;
+      ctx.globalAlpha = 0.18 + Math.random() * 0.4;
+      ctx.fillStyle = 'hsl(' + hShift + ' ' + sat.toFixed(1) + '% ' + light.toFixed(1) + '%)';
+      const cx = Math.random() * w;
+      const cy = Math.random() * h;
+      const rx = 80 + Math.random() * 360;
+      const ry = 70 + Math.random() * 280;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, rx, ry, Math.random() * Math.PI, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    const lineCount = 14 + Math.floor(Math.random() * 16);
+    for (let i = 0; i < lineCount; i += 1) {
+      const hLine = normalizeHue(hueB + (Math.random() * 130) - 65);
+      const sat = 58 + Math.random() * 35;
+      const light = 46 + Math.random() * 30;
+      ctx.globalAlpha = 0.24 + Math.random() * 0.42;
+      ctx.strokeStyle = 'hsl(' + hLine + ' ' + sat.toFixed(1) + '% ' + light.toFixed(1) + '%)';
+      ctx.lineWidth = 4 + Math.random() * 24;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(Math.random() * w, Math.random() * h);
+      ctx.bezierCurveTo(
+        Math.random() * w,
+        Math.random() * h,
+        Math.random() * w,
+        Math.random() * h,
+        Math.random() * w,
+        Math.random() * h
+      );
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+
+    return {
+      imageData: ctx.getImageData(0, 0, w, h),
+      previewSrc: canvas.toDataURL('image/png'),
+    };
   }
 
   function canSampleImage(src) {
@@ -1151,7 +1220,10 @@
     const [hueResetToken, setHueResetToken] = useState(0);
     const [hueShiftDeg, setHueShiftDeg] = useState(0);
     const [miniImageSrc, setMiniImageSrc] = useState(FALLBACK_PRESET.src);
-    const [selectedArtistId, setSelectedArtistId] = useState('basquiat');
+    const [selectedArtistId, setSelectedArtistId] = useState(function () {
+      const idx = Math.floor(Math.random() * ARTIST_OPTIONS.length);
+      return ARTIST_OPTIONS[idx].id;
+    });
     const [artistGraphsById, setArtistGraphsById] = useState({});
     const [artistLoading, setArtistLoading] = useState(false);
     const [artistLoadError, setArtistLoadError] = useState('');
@@ -1245,6 +1317,24 @@
     function loadPreset(preset, visibleIndex, suppressError) {
       if (!preset) return;
       setSelectedPresetIndex(visibleIndex);
+
+      if (preset.isDemo) {
+        try {
+          const demo = buildRandomDemoPreset();
+          setImageData(demo.imageData);
+          setImageName(preset.name);
+          updateMiniImageSrc(demo.previewSrc, false);
+          setHueShiftDeg(0);
+          setHueResetToken(function (n) { return n + 1; });
+          setPaletteVariationSeed(1);
+          setRuntimeError('');
+        } catch (err) {
+          if (!suppressError) {
+            setRuntimeError('Could not build random preset demo image.');
+          }
+        }
+        return;
+      }
 
       if (isFileProtocolPage() && isLocalPresetSource(preset.src)) {
         if (!suppressError) {
