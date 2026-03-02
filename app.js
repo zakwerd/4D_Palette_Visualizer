@@ -35,6 +35,26 @@
   ].join("");
   const FALLBACK_PRESET_SRC = 'data:image/svg+xml;utf8,' + encodeURIComponent(FALLBACK_PRESET_SVG);
   const FALLBACK_PRESET = { name: 'Preset Demo', src: FALLBACK_PRESET_SRC };
+  const DATA_CACHE_BUSTER = '2026-03-02-basquiat-rescrape-1';
+  const ARTIST_OPTIONS = [
+    { id: 'basquiat', label: 'Basquiat', searchName: 'Jean-Michel Basquiat', dataPath: './data/basquait-palettes.json' },
+    { id: 'vangogh', label: 'Van Gogh', searchName: 'Vincent van Gogh', dataPath: './data/van-gogh-palettes.json' },
+    { id: 'cezanne', label: 'Cezanne', searchName: 'Paul Cezanne', dataPath: './data/cezanne-palettes.json' },
+  ];
+  const DEFAULT_ARTIST_BLURBS = {
+    basquiat: {
+      title: "Basquiat's Palettes:",
+      body: "Basquiat's palettes are bold, high-contrast, and emotionally charged. He often juxtaposes saturated primaries-acidic yellows, hot reds, electric blues-with raw blacks and exposed ground, creating tension between vibrancy and abrasion. Color functions less as natural description and more as symbolic force: crowns glow in yellow, skeletal figures clash against dark fields, and layered marks allow hues to bleed, scrape, and collide. His paintings feel chromatically urgent-color as rhythm, protest, and pulse rather than harmony.",
+    },
+    vangogh: {
+      title: "Van Gogh's Palettes:",
+      body: "Van Gogh’s palettes are intense, expressive, and emotionally saturated. He amplifies complementary contrasts-vivid yellows against cobalt blues, viridian greens against burning oranges-to heighten psychological charge. Thick impasto brushstrokes make color tactile, turning pigment into movement and light into rhythm. Rather than naturalistic harmony, he pursues chromatic emotion: night skies vibrate in electric blues, fields blaze in sulfurous gold, and shadows pulse with unexpected violets. In his work, color is not descriptive-it is feeling made visible.",
+    },
+    cezanne: {
+      title: "Cezanne's Palettes:",
+      body: "Cézanne’s palettes are structured, modulated, and architectonic. He builds form through interlocking planes of color-cool blues and greens balancing warm ochres, siennas, and muted reds-allowing hue shifts to model depth instead of relying on line or heavy shadow. Rather than dramatic contrast, he favors tonal variation and subtle temperature changes, letting strokes accumulate into stable, geometric harmony. His color is constructive: patches of pigment operate like facets, turning apples, mountains, and figures into enduring arrangements of light and structure.",
+    },
+  };
 
   function rgbToHsv(r, g, b) {
     const nr = r / 255;
@@ -187,6 +207,11 @@
 
   function normalizeHue(h) {
     return ((h % 360) + 360) % 360;
+  }
+
+  function withDataVersion(path) {
+    const sep = path.indexOf('?') >= 0 ? '&' : '?';
+    return path + sep + 'v=' + encodeURIComponent(DATA_CACHE_BUSTER);
   }
 
   function toHexByte(n) {
@@ -411,6 +436,41 @@
     return tryAt(0);
   }
 
+  function yearStartValue(yearText) {
+    if (!yearText) return Number.POSITIVE_INFINITY;
+    const m = String(yearText).match(/(\d{4})/);
+    return m ? Number(m[1]) : Number.POSITIVE_INFINITY;
+  }
+
+  function buildShuffledIndices(total) {
+    const order = Array.from({ length: total }, function (_v, i) { return i; });
+    for (let i = order.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(Math.random() * (i + 1));
+      const tmp = order[i];
+      order[i] = order[j];
+      order[j] = tmp;
+    }
+    return order;
+  }
+
+  function parseArtistGraphs(data) {
+    if (!data || !Array.isArray(data.graphs)) return [];
+    return data.graphs.map(function (g) {
+      return {
+        id: g.id,
+        title: g.title || g.id,
+        year: g.year || null,
+        source: g.source || '',
+        image: g.image || '',
+        points: (g.points || []).map(function (p) {
+          return Object.assign({}, p, {
+            color: 'rgb(' + p.r + ' ' + p.g + ' ' + p.b + ')',
+          });
+        }),
+      };
+    });
+  }
+
   function CanvasGraph(props) {
     const points = props.points;
     const pointScale = props.pointScale;
@@ -420,6 +480,9 @@
     const externalHueShiftDeg = props.hueShiftDeg;
     const onHueShiftChange = props.onHueShiftChange;
     const miniImageSrc = props.miniImageSrc;
+    const showBackLink = props.showBackLink !== false;
+    const showMiniViewer = props.showMiniViewer !== false;
+    const stopAutoRotateOnWheel = props.stopAutoRotateOnWheel !== false;
 
     const canvasRef = useRef(null);
     const wrapRef = useRef(null);
@@ -850,7 +913,7 @@
 
     function onWheel(e) {
       e.preventDefault();
-      setAutoRotate(false);
+      if (stopAutoRotateOnWheel) setAutoRotate(false);
       const dz = e.deltaY > 0 ? -0.06 : 0.06;
       setView(function (v) {
         return {
@@ -881,15 +944,17 @@
         onWheel: onWheel,
         onDoubleClick: onDoubleClick,
       }),
-      h(
-        'a',
-        {
-          href: 'https://juicedup.cargo.site/',
-          className: 'back-juice-link',
-        },
-        'Back to JUICE'
-      ),
-      miniImageSrc
+      showBackLink
+        ? h(
+          'a',
+          {
+            href: 'https://juicedup.cargo.site/',
+            className: 'back-juice-link',
+          },
+          'Back to JUICE'
+        )
+        : null,
+      showMiniViewer && miniImageSrc
         ? h(
           'button',
           {
@@ -906,7 +971,7 @@
           })
         )
         : null,
-      miniViewerOpen && miniImageSrc
+      showMiniViewer && miniViewerOpen && miniImageSrc
         ? h(
           'div',
           {
@@ -924,7 +989,7 @@
               className: 'mini-viewer-close',
               onClick: function () { setMiniViewerOpen(false); },
               title: 'Close',
-            }, 'Close'),
+            }, '\u00D7'),
             h('img', {
               className: 'mini-viewer-modal-image',
               src: miniImageSrc,
@@ -971,6 +1036,109 @@
     );
   }
 
+  function MiniOrbitGraph(props) {
+    const points = props.points || [];
+    const mode = props.mode || 'mini';
+    const canvasRef = useRef(null);
+    const wrapRef = useRef(null);
+    const pointsRef = useRef(points);
+    const rotationRef = useRef({
+      angle: Math.random() * Math.PI * 2,
+      rx: -0.65 + (Math.random() * 0.25),
+    });
+
+    useEffect(function () {
+      pointsRef.current = points;
+    }, [points]);
+
+    useEffect(function () {
+      const wrap = wrapRef.current;
+      const canvas = canvasRef.current;
+      if (!wrap || !canvas) return undefined;
+
+      function onResize() {
+        const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+        const w = Math.max(1, Math.floor(wrap.clientWidth));
+        const h = Math.max(1, Math.floor(wrap.clientHeight));
+        canvas.width = Math.floor(w * dpr);
+        canvas.height = Math.floor(h * dpr);
+      }
+
+      onResize();
+      window.addEventListener('resize', onResize);
+
+      if (mode === 'feature') {
+        rotationRef.current.rx = -0.58;
+      }
+
+      let frameId = 0;
+      const zoom = mode === 'feature' ? 1.85 : 0.92;
+      const dotScale = mode === 'feature' ? 1.45 : 1.0;
+      const speed = mode === 'feature' ? 0.005 : 0.006;
+
+      function draw() {
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+        const width = canvas.width / dpr;
+        const height = canvas.height / dpr;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, width, height);
+
+        const bg = ctx.createLinearGradient(0, 0, width, height);
+        bg.addColorStop(0, 'rgba(14, 28, 42, 0.95)');
+        bg.addColorStop(1, 'rgba(9, 18, 28, 0.95)');
+        ctx.fillStyle = bg;
+        ctx.fillRect(0, 0, width, height);
+
+        const activePoints = pointsRef.current || [];
+        const rx = rotationRef.current.rx;
+        const angle = rotationRef.current.angle;
+
+        let maxCount = 1;
+        for (let i = 0; i < activePoints.length; i += 1) {
+          if (activePoints[i].count > maxCount) maxCount = activePoints[i].count;
+        }
+
+        const rendered = activePoints.map(function (p) {
+          const rotated = rotate3(p.x, p.y, p.z, rx, angle);
+          const pr = project3(rotated, width, height, zoom);
+          return {
+            x: pr.x,
+            y: pr.y,
+            z: pr.z,
+            depth: pr.depth,
+            count: p.count,
+            color: p.color || ('rgb(' + p.r + ' ' + p.g + ' ' + p.b + ')'),
+          };
+        });
+        rendered.sort(function (a, b) { return b.z - a.z; });
+
+        for (let i = 0; i < rendered.length; i += 1) {
+          const p = rendered[i];
+          const size = (0.85 + Math.pow(p.count / maxCount, 0.55) * 4.35) * dotScale;
+          ctx.beginPath();
+          ctx.globalAlpha = 0.9;
+          ctx.fillStyle = p.color;
+          ctx.arc(p.x, p.y, size, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+
+        rotationRef.current.angle += speed;
+        frameId = requestAnimationFrame(draw);
+      }
+
+      draw();
+      return function () {
+        cancelAnimationFrame(frameId);
+        window.removeEventListener('resize', onResize);
+      };
+    }, [mode]);
+
+    return h('div', { className: 'mini-orbit-wrap', ref: wrapRef }, h('canvas', { ref: canvasRef, className: 'mini-orbit-canvas' }));
+  }
+
   function App() {
     const [imageName, setImageName] = useState('No image loaded');
     const [imageData, setImageData] = useState(null);
@@ -983,6 +1151,15 @@
     const [hueResetToken, setHueResetToken] = useState(0);
     const [hueShiftDeg, setHueShiftDeg] = useState(0);
     const [miniImageSrc, setMiniImageSrc] = useState(FALLBACK_PRESET.src);
+    const [selectedArtistId, setSelectedArtistId] = useState('basquiat');
+    const [artistGraphsById, setArtistGraphsById] = useState({});
+    const [artistLoading, setArtistLoading] = useState(false);
+    const [artistLoadError, setArtistLoadError] = useState('');
+    const [artistCycleIndex, setArtistCycleIndex] = useState(0);
+    const [artistCycleOrderById, setArtistCycleOrderById] = useState({});
+    const [miniVisibleCountByArtist, setMiniVisibleCountByArtist] = useState({});
+    const [expandedMiniGraphIndex, setExpandedMiniGraphIndex] = useState(-1);
+    const [artistBlurbs, setArtistBlurbs] = useState(DEFAULT_ARTIST_BLURBS);
     const presetTrackRef = useRef(null);
     const presetButtonRefs = useRef([]);
     const uploadedMiniSrcRef = useRef(null);
@@ -1159,6 +1336,66 @@
     }
 
     useEffect(function () {
+      let cancelled = false;
+      const artist = ARTIST_OPTIONS.find(function (a) { return a.id === selectedArtistId; });
+      if (!artist) return undefined;
+
+      setArtistCycleIndex(0);
+      setExpandedMiniGraphIndex(-1);
+      setMiniVisibleCountByArtist(function (prev) {
+        if (typeof prev[selectedArtistId] === 'number') return prev;
+        const next = Object.assign({}, prev);
+        next[selectedArtistId] = 12;
+        return next;
+      });
+      setArtistLoadError('');
+
+      setArtistLoading(true);
+      fetch(withDataVersion(artist.dataPath), { cache: 'no-store' })
+        .then(function (res) { return res.ok ? res.json() : null; })
+        .then(function (data) {
+          if (cancelled) return;
+          const parsed = parseArtistGraphs(data);
+          setArtistGraphsById(function (prev) {
+            const next = Object.assign({}, prev);
+            next[selectedArtistId] = parsed;
+            return next;
+          });
+          setArtistLoading(false);
+        })
+        .catch(function () {
+          if (cancelled) return;
+          setArtistGraphsById(function (prev) {
+            const next = Object.assign({}, prev);
+            next[selectedArtistId] = [];
+            return next;
+          });
+          setArtistLoadError('No color dataset found for this artist yet.');
+          setArtistLoading(false);
+        });
+
+      return function () {
+        cancelled = true;
+      };
+    }, [selectedArtistId]);
+
+    useEffect(function () {
+      let cancelled = false;
+      fetch(withDataVersion('./data/artist-blurbs.json'), { cache: 'no-store' })
+        .then(function (res) { return res.ok ? res.json() : null; })
+        .then(function (data) {
+          if (cancelled || !data || typeof data !== 'object') return;
+          setArtistBlurbs(Object.assign({}, DEFAULT_ARTIST_BLURBS, data));
+        })
+        .catch(function () {
+          if (!cancelled) setArtistBlurbs(DEFAULT_ARTIST_BLURBS);
+        });
+      return function () {
+        cancelled = true;
+      };
+    }, []);
+
+    useEffect(function () {
       return function () {
         if (uploadedMiniSrcRef.current) {
           URL.revokeObjectURL(uploadedMiniSrcRef.current);
@@ -1166,6 +1403,86 @@
         }
       };
     }, []);
+
+    const activeArtistGraphs = artistGraphsById[selectedArtistId] || [];
+    const activeCycleOrder = artistCycleOrderById[selectedArtistId] || [];
+    const activeCycleGraphs = (activeCycleOrder.length === activeArtistGraphs.length
+      ? activeCycleOrder
+      : activeArtistGraphs.map(function (_g, idx) { return idx; }))
+      .map(function (idx) { return activeArtistGraphs[idx]; })
+      .filter(Boolean);
+    const currentCycleGraph = activeCycleGraphs[artistCycleIndex] || null;
+    const visibleMiniCount = miniVisibleCountByArtist[selectedArtistId] || 12;
+    const sortedMiniGraphs = activeArtistGraphs.slice()
+      .sort(function (a, b) {
+        const ay = yearStartValue(a.year);
+        const by = yearStartValue(b.year);
+        if (ay !== by) return ay - by;
+        return String(a.title || '').localeCompare(String(b.title || ''));
+      });
+    const visibleMiniGraphs = sortedMiniGraphs.slice(0, visibleMiniCount);
+
+    useEffect(function () {
+      if (!activeArtistGraphs.length) return;
+      setArtistCycleOrderById(function (prev) {
+        const existing = prev[selectedArtistId];
+        if (Array.isArray(existing) && existing.length === activeArtistGraphs.length) return prev;
+        const next = Object.assign({}, prev);
+        next[selectedArtistId] = buildShuffledIndices(activeArtistGraphs.length);
+        return next;
+      });
+    }, [selectedArtistId, activeArtistGraphs.length]);
+
+    useEffect(function () {
+      if (activeCycleGraphs.length < 2) return undefined;
+      const id = window.setInterval(function () {
+        setArtistCycleIndex(function (idx) {
+          return (idx + 1) % activeCycleGraphs.length;
+        });
+      }, 1250);
+      return function () {
+        window.clearInterval(id);
+      };
+    }, [activeCycleGraphs.length]);
+
+    useEffect(function () {
+      if (artistCycleIndex >= activeCycleGraphs.length) {
+        setArtistCycleIndex(0);
+      }
+    }, [artistCycleIndex, activeCycleGraphs.length]);
+
+    useEffect(function () {
+      if (expandedMiniGraphIndex < 0) return undefined;
+      function onKeyDown(e) {
+        if (!visibleMiniGraphs.length) return;
+        if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          setExpandedMiniGraphIndex(function (idx) {
+            if (idx < 0) return idx;
+            return (idx - 1 + visibleMiniGraphs.length) % visibleMiniGraphs.length;
+          });
+        } else if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          setExpandedMiniGraphIndex(function (idx) {
+            if (idx < 0) return idx;
+            return (idx + 1) % visibleMiniGraphs.length;
+          });
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          setExpandedMiniGraphIndex(-1);
+        }
+      }
+      window.addEventListener('keydown', onKeyDown);
+      return function () {
+        window.removeEventListener('keydown', onKeyDown);
+      };
+    }, [expandedMiniGraphIndex, visibleMiniGraphs.length]);
+
+    useEffect(function () {
+      if (expandedMiniGraphIndex >= visibleMiniGraphs.length) {
+        setExpandedMiniGraphIndex(-1);
+      }
+    }, [expandedMiniGraphIndex, visibleMiniGraphs.length]);
 
     useEffect(function () {
       let cancelled = false;
@@ -1227,6 +1544,15 @@
       }
     }, [imageData, graphSettings]);
 
+    const selectedArtist = ARTIST_OPTIONS.find(function (a) { return a.id === selectedArtistId; }) || ARTIST_OPTIONS[0];
+    const sortedArtistOptions = ARTIST_OPTIONS.slice().sort(function (a, b) {
+      return a.label.localeCompare(b.label);
+    });
+    const selectedArtistBlurb = artistBlurbs[selectedArtistId] || DEFAULT_ARTIST_BLURBS[selectedArtistId] || {
+      title: selectedArtist.label + "'s Palettes:",
+      body: 'No artist blurb added yet.',
+    };
+
     return h(
       'div',
       { className: 'app' },
@@ -1258,107 +1584,294 @@
           h('button', { className: 'secondary', onClick: resetGraph }, 'Clear')
         ),
 
-        h('div', { className: 'meta' },
-          h('div', null, 'Image: ' + imageName),
-          h('div', null, 'Sampled Pixels: ' + graphData.sampled.toLocaleString()),
-          h('div', null, 'Active Color Buckets: ' + prettyPointCount),
-          runtimeError ? h('div', { style: { color: '#ff8f8f', marginTop: '8px' } }, 'Runtime error: ' + runtimeError) : null
-        ),
-
-        h('div', { className: 'legend' }, 'Color sphere mapping: hue wraps around, brightness is vertical, saturation moves toward/away from center. Auto-rotates after upload. Click/drag or scroll to freeze. Double-click to resume/pause rotation.')
+        runtimeError ? h('div', { className: 'meta' }, h('div', { style: { color: '#ff8f8f', marginTop: '8px' } }, 'Runtime error: ' + runtimeError)) : null
       ),
 
-      h('section', { className: 'viewer' },
-        h('div', { className: 'viewer-layout' },
-          h(CanvasGraph, {
-            points: graphData.points,
-            pointScale: settings.pointScale,
-            cameraDistance: settings.cameraDistance,
+      h('div', { className: 'content-stack' },
+        h('section', { className: 'viewer' },
+          h('div', { className: 'viewer-layout' },
+            h(CanvasGraph, {
+              points: graphData.points,
+              pointScale: settings.pointScale,
+              cameraDistance: settings.cameraDistance,
             showGrid: settings.showGrid,
             hueResetToken: hueResetToken,
             hueShiftDeg: hueShiftDeg,
             onHueShiftChange: setHueShiftDeg,
             miniImageSrc: miniImageSrc,
+            stopAutoRotateOnWheel: false,
           }),
-          h('aside', { className: 'palette-column' },
-            h('div', { className: 'palette-title' }, 'Palette'),
-            h(
-              'div',
-              {
-                className: 'palette-swatches',
-                style: { '--palette-count': String(Math.max(1, settings.paletteSize)) },
-              },
-              (paletteSwatches.length ? paletteSwatches : Array.from({ length: settings.paletteSize })).map(function (swatch, i) {
-                const empty = !swatch;
+            h('aside', { className: 'palette-column' },
+              h('div', { className: 'palette-title' }, 'Palette'),
+              h(
+                'div',
+                {
+                  className: 'palette-swatches',
+                  style: { '--palette-count': String(Math.max(1, settings.paletteSize)) },
+                },
+                (paletteSwatches.length ? paletteSwatches : Array.from({ length: settings.paletteSize })).map(function (swatch, i) {
+                  const empty = !swatch;
+                  return h(
+                    'div',
+                    { key: swatch ? swatch.id : 'placeholder-' + i, className: 'palette-item' },
+                    h('div', {
+                      className: 'palette-swatch',
+                      style: {
+                        background: empty ? 'linear-gradient(150deg, #172433, #12202c)' : swatch.color,
+                      },
+                    }),
+                    h('div', { className: 'palette-label' }, empty ? '--' : swatch.hex)
+                  );
+                })
+              ),
+              h('div', { className: 'palette-controls' },
+                h('div', { className: 'palette-size-row' },
+                  h('span', { className: 'palette-size-label' }, 'Palette Size'),
+                  h('div', { className: 'palette-size-buttons' },
+                    h('button', {
+                      type: 'button',
+                      className: 'palette-btn',
+                      onClick: function () {
+                        setSetting('paletteSize', Math.max(2, settings.paletteSize - 1));
+                      },
+                    }, '-'),
+                    h('span', { className: 'palette-size-value' }, String(settings.paletteSize)),
+                    h('button', {
+                      type: 'button',
+                      className: 'palette-btn',
+                      onClick: function () {
+                        setSetting('paletteSize', Math.min(16, settings.paletteSize + 1));
+                      },
+                    }, '+')
+                  )
+                ),
+                h('button', {
+                  type: 'button',
+                  className: 'palette-regenerate-btn',
+                  onClick: function () {
+                    setPaletteVariationSeed(function (v) { return v + 1; });
+                  },
+                }, 'Regenerate Palette')
+              )
+            )
+          ),
+          h('div', { className: 'preset-strip' },
+            h('div', { className: 'preset-strip-head' }, 'Preset Examples'),
+            h('div', { className: 'preset-track', ref: presetTrackRef },
+              availablePresets.map(function (preset, i) {
                 return h(
-                  'div',
-                  { key: swatch ? swatch.id : 'placeholder-' + i, className: 'palette-item' },
-                  h('div', {
-                    className: 'palette-swatch',
-                    style: {
-                      background: empty ? 'linear-gradient(150deg, #172433, #12202c)' : swatch.color,
-                    },
+                  'button',
+                  {
+                    key: preset.src,
+                    ref: function (el) { presetButtonRefs.current[i] = el; },
+                    type: 'button',
+                    className: 'preset-thumb-btn' + (selectedPresetIndex === i ? ' active' : ''),
+                    onClick: function () { loadPreset(preset, i, false); },
+                    title: preset.name,
+                  },
+                  h('img', {
+                    className: 'preset-thumb-img',
+                    src: preset.src,
+                    alt: preset.name,
+                    loading: 'lazy',
                   }),
-                  h('div', { className: 'palette-label' }, empty ? '--' : swatch.hex)
+                  h('span', { className: 'preset-thumb-label' }, preset.name)
                 );
               })
-            ),
-            h('div', { className: 'palette-controls' },
-              h('div', { className: 'palette-size-row' },
-                h('span', { className: 'palette-size-label' }, 'Palette Size'),
-                h('div', { className: 'palette-size-buttons' },
-                  h('button', {
-                    type: 'button',
-                    className: 'palette-btn',
-                    onClick: function () {
-                      setSetting('paletteSize', Math.max(2, settings.paletteSize - 1));
-                    },
-                  }, '-'),
-                  h('span', { className: 'palette-size-value' }, String(settings.paletteSize)),
-                  h('button', {
-                    type: 'button',
-                    className: 'palette-btn',
-                    onClick: function () {
-                      setSetting('paletteSize', Math.min(16, settings.paletteSize + 1));
-                    },
-                  }, '+')
-                )
-              ),
-              h('button', {
-                type: 'button',
-                className: 'palette-regenerate-btn',
-                onClick: function () {
-                  setPaletteVariationSeed(function (v) { return v + 1; });
-                },
-              }, 'Regenerate Palette')
             )
           )
         ),
-        h('div', { className: 'preset-strip' },
-          h('div', { className: 'preset-strip-head' }, 'Preset Examples'),
-          h('div', { className: 'preset-track', ref: presetTrackRef },
-            availablePresets.map(function (preset, i) {
-              return h(
+        h('section', { className: 'artist-feature-section' },
+          h('div', { className: 'artist-feature-copy' },
+            h('h2', { className: 'artist-feature-title' }, selectedArtistBlurb.title),
+            h(
+              'label',
+              { className: 'artist-select-wrap' },
+              h('span', { className: 'artist-select-label' }, 'Artist'),
+              h(
+                'select',
+                {
+                  className: 'artist-select',
+                  value: selectedArtistId,
+                  onChange: function (e) { setSelectedArtistId(e.target.value); },
+                },
+                sortedArtistOptions.map(function (artist) {
+                  return h('option', { key: artist.id, value: artist.id }, artist.label);
+                })
+              )
+            ),
+            h('p', { className: 'artist-feature-blurb' }, selectedArtistBlurb.body),
+            !artistLoading && !activeArtistGraphs.length
+              ? h('p', { className: 'artist-data-note' }, artistLoadError || 'No color data added for this artist yet.')
+              : null
+          ),
+          h('div', { className: 'artist-feature-graph' },
+            h(
+              'div',
+              { className: 'artist-feature-frame' },
+              currentCycleGraph
+                ? h(MiniOrbitGraph, { points: currentCycleGraph.points, mode: 'feature' })
+                : h('div', { className: 'artist-empty-state' }, artistLoading ? 'Loading data...' : 'No data')
+            ),
+            currentCycleGraph
+              ? h('div', { className: 'artist-feature-meta' },
+                h('div', { className: 'artist-feature-meta-title' }, currentCycleGraph.title || 'Untitled'),
+                h('div', { className: 'artist-feature-meta-year' }, currentCycleGraph.year || 'Year unknown')
+              )
+              : null
+          )
+        ),
+        visibleMiniGraphs.length
+          ? h('section', { className: 'artist-mini-grid-section' },
+            h('div', { className: 'artist-mini-grid-scroll' },
+              h('div', { className: 'artist-mini-grid' },
+                visibleMiniGraphs.map(function (graph, idx) {
+                  const workLabel = graph.year ? (graph.title + ' (' + graph.year + ')') : graph.title;
+                  return h(
+                    'article',
+                    {
+                      key: graph.id || (selectedArtistId + '-' + idx),
+                      className: 'artist-mini-grid-item',
+                      role: 'button',
+                      tabIndex: 0,
+                      onClick: function () { setExpandedMiniGraphIndex(idx); },
+                      onKeyDown: function (e) {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          setExpandedMiniGraphIndex(idx);
+                        }
+                      },
+                      title: workLabel || ('Open ' + selectedArtist.label + ' graph ' + String(idx + 1)),
+                      'aria-label': workLabel || ('Open ' + selectedArtist.label + ' graph ' + String(idx + 1)),
+                    },
+                    h(MiniOrbitGraph, { points: graph.points, mode: 'mini' }),
+                    h('div', { className: 'artist-mini-caption' },
+                      h('div', { className: 'artist-mini-title' }, graph.title || 'Untitled'),
+                      h('div', { className: 'artist-mini-year' }, graph.year || 'Year unknown')
+                    )
+                  );
+                })
+              )
+            ),
+            (visibleMiniCount < sortedMiniGraphs.length)
+              ? h(
                 'button',
                 {
-                  key: preset.src,
-                  ref: function (el) { presetButtonRefs.current[i] = el; },
                   type: 'button',
-                  className: 'preset-thumb-btn' + (selectedPresetIndex === i ? ' active' : ''),
-                  onClick: function () { loadPreset(preset, i, false); },
-                  title: preset.name,
+                  className: 'artist-load-more-btn',
+                  onClick: function () {
+                    setMiniVisibleCountByArtist(function (prev) {
+                      const next = Object.assign({}, prev);
+                      const currentCount = next[selectedArtistId] || 12;
+                      next[selectedArtistId] = Math.min(sortedMiniGraphs.length, currentCount + 12);
+                      return next;
+                    });
+                  },
                 },
-                h('img', {
-                  className: 'preset-thumb-img',
-                  src: preset.src,
-                  alt: preset.name,
-                  loading: 'lazy',
-                }),
-                h('span', { className: 'preset-thumb-label' }, preset.name)
-              );
-            })
+                'Load more palettes'
+              )
+              : null
           )
-        )
+          : null,
+        expandedMiniGraphIndex >= 0 && visibleMiniGraphs[expandedMiniGraphIndex]
+          ? h(
+            'div',
+            {
+              className: 'mini-graph-modal',
+              onClick: function () { setExpandedMiniGraphIndex(-1); },
+            },
+            h(
+              'div',
+              {
+                className: 'mini-graph-modal-inner',
+                onClick: function (e) { e.stopPropagation(); },
+              },
+              h(
+                'div',
+                { className: 'mini-graph-modal-head' },
+                h('div', { className: 'mini-graph-modal-title' },
+                  visibleMiniGraphs[expandedMiniGraphIndex].year
+                    ? (visibleMiniGraphs[expandedMiniGraphIndex].title + ' (' + visibleMiniGraphs[expandedMiniGraphIndex].year + ')')
+                    : (visibleMiniGraphs[expandedMiniGraphIndex].title || (selectedArtist.label + ' Graph ' + String(expandedMiniGraphIndex + 1)))
+                ),
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    className: 'mini-graph-modal-close',
+                    onClick: function () { setExpandedMiniGraphIndex(-1); },
+                  },
+                  'Close'
+                )
+              ),
+              h(
+                'div',
+                { className: 'mini-graph-modal-canvas' },
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    className: 'mini-graph-nav mini-graph-nav-left',
+                    onClick: function () {
+                      setExpandedMiniGraphIndex(function (idx) {
+                        return (idx - 1 + visibleMiniGraphs.length) % visibleMiniGraphs.length;
+                      });
+                    },
+                    title: 'Previous graph',
+                    'aria-label': 'Previous graph',
+                  },
+                  '\u2039'
+                ),
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    className: 'mini-graph-nav mini-graph-nav-right',
+                    onClick: function () {
+                      setExpandedMiniGraphIndex(function (idx) {
+                        return (idx + 1) % visibleMiniGraphs.length;
+                      });
+                    },
+                    title: 'Next graph',
+                    'aria-label': 'Next graph',
+                  },
+                  '\u203A'
+                ),
+                h(CanvasGraph, {
+                  points: visibleMiniGraphs[expandedMiniGraphIndex].points,
+                  pointScale: settings.pointScale,
+                  cameraDistance: settings.cameraDistance,
+                  showGrid: false,
+                  showBackLink: false,
+                  showMiniViewer: false,
+                  stopAutoRotateOnWheel: false,
+                })
+              ),
+              h(
+                'div',
+                { className: 'mini-graph-modal-actions' },
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    className: 'mini-graph-find-btn',
+                    onClick: function () {
+                      const work = visibleMiniGraphs[expandedMiniGraphIndex] || {};
+                      const queryParts = [
+                        work.title || '',
+                        work.year || '',
+                        selectedArtist.searchName || selectedArtist.label || '',
+                      ].filter(Boolean);
+                      const query = encodeURIComponent(queryParts.join(' '));
+                      window.open('https://www.google.com/search?tbm=isch&q=' + query, '_blank', 'noopener,noreferrer');
+                    },
+                  },
+                  'Find this painting'
+                )
+              )
+            )
+          )
+          : null
       )
     );
   }
