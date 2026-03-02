@@ -10,5 +10,9 @@
   "cezanne": {
     "title": "Cezanne's Palettes:",
     "body": "Cézanne’s palettes are structured, modulated, and architectonic. He builds form through interlocking planes of color-cool blues and greens balancing warm ochres, siennas, and muted reds-allowing hue shifts to model depth instead of relying on line or heavy shadow. Rather than dramatic contrast, he favors tonal variation and subtle temperature changes, letting strokes accumulate into stable, geometric harmony. His color is constructive: patches of pigment operate like facets, turning apples, mountains, and figures into enduring arrangements of light and structure."
+  },
+  "kandinsky": {
+    "title": "Kandinsky's Palettes:",
+    "body": "Kandinsky’s palettes are abstract, musical, and dynamic. He contrasts bright primaries with dark stabilizing tones and uses color relationships to generate rhythm, tension, and spatial movement. Across periods, his chromatic language shifts from atmospheric expression to geometric precision while keeping color at the center of emotional and structural impact."
   }
 }
