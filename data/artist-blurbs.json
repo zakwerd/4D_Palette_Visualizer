@@ -1,0 +1,14 @@
+{
+  "basquiat": {
+    "title": "Basquiat's Palettes:",
+    "body": "Bold, high-contrast, and emotionally charged--Basquiat often juxtaposes saturated primaries-acidic yellows, hot reds, electric blues-with raw blacks and exposed ground, creating tension between vibrancy and abrasion. Color functions less as natural description and more as symbolic force: crowns glow in yellow, skeletal figures clash against dark fields, and layered marks allow hues to bleed, scrape, and collide. His paintings feel chromatically urgent-color as rhythm, protest, and pulse rather than harmony."
+  },
+  "vangogh": {
+    "title": "Van Gogh's Palettes:",
+    "body": "Van Gogh’s palettes are intense, expressive, and emotionally saturated. He amplifies complementary contrasts-vivid yellows against cobalt blues, viridian greens against burning oranges-to heighten psychological charge. Thick impasto brushstrokes make color tactile, turning pigment into movement and light into rhythm. Rather than naturalistic harmony, he pursues chromatic emotion: night skies vibrate in electric blues, fields blaze in sulfurous gold, and shadows pulse with unexpected violets. In his work, color is not descriptive-it is feeling made visible."
+  },
+  "cezanne": {
+    "title": "Cezanne's Palettes:",
+    "body": "Cézanne’s palettes are structured, modulated, and architectonic. He builds form through interlocking planes of color-cool blues and greens balancing warm ochres, siennas, and muted reds-allowing hue shifts to model depth instead of relying on line or heavy shadow. Rather than dramatic contrast, he favors tonal variation and subtle temperature changes, letting strokes accumulate into stable, geometric harmony. His color is constructive: patches of pigment operate like facets, turning apples, mountains, and figures into enduring arrangements of light and structure."
+  }
+}
