@@ -712,6 +712,77 @@ body {
   text-align: left;
 }
 
+.name-palette-floating {
+  width: min(calc(100% - var(--section-two-right-gutter)), 700px);
+  border: 2px solid var(--border);
+  border-radius: 14px;
+  background: #d6dae2;
+  box-shadow: 0 10px 24px rgba(23, 24, 29, 0.16);
+  padding: 12px;
+  margin: 8px 0 0;
+  align-self: flex-start;
+}
+
+.name-palette-head {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #40414a;
+  margin-bottom: 7px;
+  font-weight: 700;
+}
+
+.name-palette-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.name-palette-input {
+  width: 100%;
+  border: 1px solid #7f818a;
+  border-radius: 9px;
+  background: #f8f9fb;
+  color: #1f2025;
+  padding: 10px 12px;
+  font-size: 0.9rem;
+}
+
+.name-palette-input::placeholder {
+  color: #73757f;
+}
+
+.name-palette-lucky-btn {
+  border: 1px solid #2f3035;
+  background: #ffffff;
+  color: #1f2025;
+  border-radius: 9px;
+  padding: 10px 12px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.name-palette-actions {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 8px;
+  justify-content: start;
+}
+
+.name-palette-search-btn {
+  border: 1px solid #2f3035;
+  background: #ff4741;
+  color: #ffffff;
+  border-radius: 9px;
+  padding: 10px 12px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
 .button-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -772,6 +843,11 @@ button.secondary {
     margin-top: 64px;
   }
 
+  .name-palette-floating {
+    width: 100%;
+    max-width: 100%;
+  }
+
   .artist-mini-grid-section {
     width: 100%;
     max-width: 100%;
@@ -824,5 +900,9 @@ button.secondary {
 
   .preset-thumb-img {
     height: 58px;
+  }
+
+  .name-palette-actions {
+    grid-template-columns: 1fr;
   }
 }

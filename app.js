@@ -12,10 +12,10 @@
   const useMemo = React.useMemo;
   const useRef = React.useRef;
   const useState = React.useState;
-  const PRESET_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp'];
   const PRESET_SLOTS = Array.from({ length: 23 }, function (_v, i) {
     return String(i + 1).padStart(2, '0');
   });
+  const BLANK_IMAGE_PIXEL = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
   const FALLBACK_PRESET_SVG = [
     "<svg xmlns='http://www.w3.org/2000/svg' width='1200' height='900' viewBox='0 0 1200 900'>",
     "<defs>",
@@ -234,6 +234,94 @@
     };
   }
 
+  function clamp01(v) {
+    return Math.max(0, Math.min(1, v));
+  }
+
+  function hashStringFNV1a(str) {
+    let hash = 2166136261;
+    for (let i = 0; i < str.length; i += 1) {
+      hash ^= str.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
+    }
+    return hash >>> 0;
+  }
+
+  function makeEntropySeed() {
+    if (window.crypto && typeof window.crypto.getRandomValues === 'function') {
+      const arr = new Uint32Array(1);
+      window.crypto.getRandomValues(arr);
+      return arr[0] >>> 0;
+    }
+    return ((Math.random() * 0xFFFFFFFF) ^ Date.now()) >>> 0;
+  }
+
+  function buildSeedPalette(seed, paletteSize) {
+    const size = Math.max(2, Math.min(16, paletteSize || 8));
+    const rand = createRng(seed || 1);
+    const baseHue = Math.floor(rand() * 360);
+    const step = 360 / size;
+    const palette = [];
+
+    for (let i = 0; i < size; i += 1) {
+      const hue = normalizeHue(
+        baseHue +
+        (step * i) +
+        ((rand() - 0.5) * 34) +
+        (((seed >>> (i % 24)) & 31) * 0.9)
+      );
+      const sat = clamp01(0.52 + rand() * 0.42);
+      const val = clamp01(0.42 + rand() * 0.5);
+      const weight = 110 + Math.floor(rand() * 760);
+      palette.push({ h: hue, s: sat, v: val, count: weight });
+    }
+
+    return palette;
+  }
+
+  function paletteToGraphPoints(palette, seed) {
+    if (!Array.isArray(palette) || !palette.length) return [];
+    const rand = createRng((seed ^ 0xA53C9E17) >>> 0);
+    const points = [];
+
+    for (let i = 0; i < palette.length; i += 1) {
+      const swatch = palette[i];
+      const rgb = hsvToRgb(swatch.h, swatch.s, swatch.v);
+      const p = hsvToSphere(swatch.h, swatch.s, swatch.v);
+      points.push({
+        x: p.x,
+        y: p.y,
+        z: p.z,
+        hue: swatch.h,
+        saturation: swatch.s,
+        brightness: swatch.v,
+        count: Math.max(2, swatch.count),
+        color: 'rgb(' + rgb.r + ' ' + rgb.g + ' ' + rgb.b + ')',
+      });
+
+      const satellites = 16;
+      for (let j = 0; j < satellites; j += 1) {
+        const h = normalizeHue(swatch.h + ((rand() - 0.5) * 20));
+        const s = clamp01(swatch.s + ((rand() - 0.5) * 0.16));
+        const v = clamp01(swatch.v + ((rand() - 0.5) * 0.16));
+        const satRgb = hsvToRgb(h, s, v);
+        const satPoint = hsvToSphere(h, s, v);
+        points.push({
+          x: satPoint.x,
+          y: satPoint.y,
+          z: satPoint.z,
+          hue: h,
+          saturation: s,
+          brightness: v,
+          count: Math.max(1, Math.round(swatch.count * (0.22 + rand() * 0.33) / satellites)),
+          color: 'rgb(' + satRgb.r + ' ' + satRgb.g + ' ' + satRgb.b + ')',
+        });
+      }
+    }
+
+    return points;
+  }
+
   function buildImagePalette(points, paletteSize, variationSeed) {
     if (!points.length || paletteSize < 1) return [];
     const rand = createRng(variationSeed || 1);
@@ -445,64 +533,21 @@
     };
   }
 
-  function canSampleImage(src) {
-    return new Promise(function (resolve) {
-      const img = new Image();
-      if (/^https?:\/\//i.test(src)) img.crossOrigin = 'anonymous';
-      img.onload = function () {
-        try {
-          const c = document.createElement('canvas');
-          const ctx = c.getContext('2d', { willReadFrequently: true });
-          c.width = 1;
-          c.height = 1;
-          ctx.drawImage(img, 0, 0, 1, 1);
-          ctx.getImageData(0, 0, 1, 1);
-          resolve(true);
-        } catch (_err) {
-          resolve(false);
-        }
-      };
-      img.onerror = function () {
-        resolve(false);
-      };
-      img.src = src;
-    });
-  }
-
-  function canLoadImage(src) {
-    return new Promise(function (resolve) {
-      const img = new Image();
-      if (/^https?:\/\//i.test(src)) img.crossOrigin = 'anonymous';
-      img.onload = function () { resolve(true); };
-      img.onerror = function () { resolve(false); };
-      img.src = src;
-    });
+  function isLocalPresetSource(src) {
+    return /^\.?\/?presets\//i.test(src);
   }
 
   function isFileProtocolPage() {
     return typeof window !== 'undefined' && window.location && window.location.protocol === 'file:';
   }
 
-  function isLocalPresetSource(src) {
-    return /^\.?\/?presets\//i.test(src);
-  }
-
-  function resolvePresetSource(slot) {
-    if (isFileProtocolPage()) return Promise.resolve(null);
-
-    const sources = PRESET_EXTENSIONS.map(function (ext) {
-      return './presets/preset-' + slot + '.' + ext;
+  function buildStaticPresets() {
+    return PRESET_SLOTS.map(function (slot) {
+      return {
+        name: 'Preset ' + slot,
+        src: './presets/preset-' + slot + '.png',
+      };
     });
-
-    function tryAt(index) {
-      if (index >= sources.length) return Promise.resolve(null);
-      return canLoadImage(sources[index]).then(function (ok) {
-        if (ok) return sources[index];
-        return tryAt(index + 1);
-      });
-    }
-
-    return tryAt(0);
   }
 
   function yearStartValue(yearText) {
@@ -1208,6 +1253,58 @@
     return h('div', { className: 'mini-orbit-wrap', ref: wrapRef }, h('canvas', { ref: canvasRef, className: 'mini-orbit-canvas' }));
   }
 
+  function LazyPresetImage(props) {
+    const src = props.src || '';
+    const alt = props.alt || '';
+    const className = props.className || '';
+    const enableLoad = props.enableLoad !== false;
+    const [visible, setVisible] = useState(false);
+    const imgRef = useRef(null);
+
+    useEffect(function () {
+      if (!enableLoad) {
+        setVisible(false);
+        return;
+      }
+      setVisible(false);
+    }, [src, enableLoad]);
+
+    useEffect(function () {
+      if (!enableLoad) return;
+      const el = imgRef.current;
+      if (!el) return;
+      if (!src) return;
+      if (typeof window === 'undefined' || typeof window.IntersectionObserver !== 'function') {
+        setVisible(true);
+        return;
+      }
+      let active = true;
+      const obs = new window.IntersectionObserver(function (entries) {
+        for (let i = 0; i < entries.length; i += 1) {
+          if (entries[i].isIntersecting) {
+            if (active) setVisible(true);
+            obs.disconnect();
+            break;
+          }
+        }
+      }, { root: null, rootMargin: '200px 200px 200px 200px' });
+      obs.observe(el);
+      return function () {
+        active = false;
+        obs.disconnect();
+      };
+    }, [src, enableLoad]);
+
+    return h('img', {
+      ref: imgRef,
+      className: className,
+      src: visible ? src : BLANK_IMAGE_PIXEL,
+      alt: alt,
+      loading: 'lazy',
+      decoding: 'async',
+    });
+  }
+
   function App() {
     const [imageName, setImageName] = useState('No image loaded');
     const [imageData, setImageData] = useState(null);
@@ -1217,6 +1314,7 @@
     const [selectedPresetIndex, setSelectedPresetIndex] = useState(-1);
     const [availablePresets, setAvailablePresets] = useState([FALLBACK_PRESET]);
     const [presetsResolved, setPresetsResolved] = useState(false);
+    const [loadedPresetThumbCount, setLoadedPresetThumbCount] = useState(8);
     const [hueResetToken, setHueResetToken] = useState(0);
     const [hueShiftDeg, setHueShiftDeg] = useState(0);
     const [miniImageSrc, setMiniImageSrc] = useState(FALLBACK_PRESET.src);
@@ -1232,6 +1330,7 @@
     const [miniVisibleCountByArtist, setMiniVisibleCountByArtist] = useState({});
     const [expandedMiniGraphIndex, setExpandedMiniGraphIndex] = useState(-1);
     const [artistBlurbs, setArtistBlurbs] = useState(DEFAULT_ARTIST_BLURBS);
+    const [namePaletteInput, setNamePaletteInput] = useState('');
     const presetTrackRef = useRef(null);
     const presetButtonRefs = useRef([]);
     const uploadedMiniSrcRef = useRef(null);
@@ -1425,6 +1524,38 @@
       img.src = url;
     }
 
+    function applyGeneratedPaletteToGraph(label, palette, seed) {
+      const points = paletteToGraphPoints(palette, seed);
+      if (!points.length) return;
+      setImageData(null);
+      setImageName(label);
+      setSelectedPresetIndex(-1);
+      updateMiniImageSrc('', false);
+      setGraphData({
+        points: points,
+        sampled: points.length,
+        uniqueBins: points.length,
+      });
+      setHueShiftDeg(0);
+      setHueResetToken(function (n) { return n + 1; });
+      setPaletteVariationSeed(1);
+      setRuntimeError('');
+    }
+
+    function generateNamePaletteFromInput(rawName) {
+      const cleaned = String(rawName || '').trim();
+      if (!cleaned) return;
+      const seed = hashStringFNV1a(cleaned.toLowerCase());
+      const palette = buildSeedPalette(seed, settings.paletteSize);
+      applyGeneratedPaletteToGraph('Name Palette: ' + cleaned, palette, seed);
+    }
+
+    function generateLuckyPalette() {
+      const seed = makeEntropySeed();
+      const palette = buildSeedPalette(seed, settings.paletteSize);
+      applyGeneratedPaletteToGraph('Lucky Palette', palette, seed);
+    }
+
     useEffect(function () {
       let cancelled = false;
       const artist = ARTIST_OPTIONS.find(function (a) { return a.id === selectedArtistId; });
@@ -1575,27 +1706,74 @@
     }, [expandedMiniGraphIndex, visibleMiniGraphs.length]);
 
     useEffect(function () {
-      let cancelled = false;
-      Promise.all(PRESET_SLOTS.map(function (slot) {
-        return resolvePresetSource(slot).then(function (src) {
-          if (!src) return null;
-          return { name: 'Preset ' + slot, src: src };
+      const presets = buildStaticPresets();
+      setAvailablePresets([FALLBACK_PRESET].concat(presets));
+      setPresetsResolved(true);
+    }, []);
+
+    useEffect(function () {
+      if (!availablePresets.length) return;
+      const track = presetTrackRef.current;
+      const fallbackVisible = 8;
+      let nextCount = Math.min(availablePresets.length, fallbackVisible);
+      if (track) {
+        const estimatedItemWidth = 98;
+        const visibleSlots = Math.ceil(track.clientWidth / estimatedItemWidth);
+        nextCount = Math.min(availablePresets.length, Math.max(fallbackVisible, visibleSlots + 2));
+      }
+      setLoadedPresetThumbCount(nextCount);
+    }, [availablePresets.length]);
+
+    useEffect(function () {
+      const track = presetTrackRef.current;
+      if (!track) return;
+      function onScroll() {
+        const nearEnd = track.scrollLeft + track.clientWidth >= track.scrollWidth - 180;
+        if (!nearEnd) return;
+        setLoadedPresetThumbCount(function (count) {
+          return Math.min(availablePresets.length, count + 6);
         });
-      })).then(function (resolved) {
+      }
+      track.addEventListener('scroll', onScroll, { passive: true });
+      return function () {
+        track.removeEventListener('scroll', onScroll);
+      };
+    }, [availablePresets.length]);
+
+    useEffect(function () {
+      if (loadedPresetThumbCount >= availablePresets.length) return;
+      if (typeof window === 'undefined') return;
+      let cancelled = false;
+      let idleId = null;
+      let timeoutId = null;
+
+      function fillRemainder() {
         if (cancelled) return;
-        const valid = resolved.filter(Boolean);
-        setAvailablePresets([FALLBACK_PRESET].concat(valid));
-        setPresetsResolved(true);
-      });
+        setLoadedPresetThumbCount(availablePresets.length);
+      }
+
+      if (typeof window.requestIdleCallback === 'function') {
+        idleId = window.requestIdleCallback(fillRemainder, { timeout: 1200 });
+      } else {
+        timeoutId = window.setTimeout(fillRemainder, 500);
+      }
+
       return function () {
         cancelled = true;
+        if (idleId !== null && typeof window.cancelIdleCallback === 'function') {
+          window.cancelIdleCallback(idleId);
+        }
+        if (timeoutId !== null) {
+          window.clearTimeout(timeoutId);
+        }
       };
-    }, []);
+    }, [availablePresets.length, loadedPresetThumbCount]);
 
     useEffect(function () {
       if (!presetsResolved) return;
       if (!availablePresets.length) return;
       if (imageData) return;
+      if (graphData.points.length) return;
       const localPresetIndices = [];
       for (let i = 0; i < availablePresets.length; i += 1) {
         if (isLocalPresetSource(availablePresets[i].src)) localPresetIndices.push(i);
@@ -1606,7 +1784,7 @@
       const randomIndex = randomPool[Math.floor(Math.random() * randomPool.length)];
       setSelectedPresetIndex(randomIndex);
       loadPreset(availablePresets[randomIndex], randomIndex, true);
-    }, [availablePresets, imageData, presetsResolved]);
+    }, [availablePresets, graphData.points.length, imageData, presetsResolved]);
 
     useEffect(function () {
       if (selectedPresetIndex < 0) return;
@@ -1749,6 +1927,7 @@
             h('div', { className: 'preset-strip-head' }, 'Preset Examples'),
             h('div', { className: 'preset-track', ref: presetTrackRef },
               availablePresets.map(function (preset, i) {
+                const enableThumbLoad = i < loadedPresetThumbCount;
                 return h(
                   'button',
                   {
@@ -1759,15 +1938,46 @@
                     onClick: function () { loadPreset(preset, i, false); },
                     title: preset.name,
                   },
-                  h('img', {
+                  h(LazyPresetImage, {
                     className: 'preset-thumb-img',
                     src: preset.src,
                     alt: preset.name,
-                    loading: 'lazy',
+                    enableLoad: enableThumbLoad,
                   }),
                   h('span', { className: 'preset-thumb-label' }, preset.name)
                 );
               })
+            )
+          )
+        ),
+        h('section', { className: 'name-palette-floating' },
+          h('div', { className: 'name-palette-head' }, 'Random Palette Generator'),
+          h('form', {
+            className: 'name-palette-form',
+            onSubmit: function (event) {
+              event.preventDefault();
+              generateNamePaletteFromInput(namePaletteInput);
+            },
+          },
+            h('input', {
+              type: 'text',
+              className: 'name-palette-input',
+              placeholder: 'Search your name.',
+              value: namePaletteInput,
+              onChange: function (event) {
+                setNamePaletteInput(event.target.value || '');
+              },
+            }),
+            h('div', { className: 'name-palette-actions' },
+              h('button', {
+                type: 'submit',
+                className: 'name-palette-search-btn',
+              }, 'Search'),
+              h('button', {
+                type: 'button',
+                className: 'name-palette-lucky-btn',
+                onClick: generateLuckyPalette,
+              }, "I'm feeling lucky!")
             )
           )
         ),

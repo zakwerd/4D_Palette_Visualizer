@@ -1,0 +1,21 @@
+Web App Improvement TODOs
+=========================
+
+How to use:
+- Add, remove, or reorder items anytime.
+- Mark completed items with [x].
+- Keep notes short so this stays easy to scan.
+
+Current reminders:
+- [ ] Improve loading states (image upload + graph rebuild)
+- [ ] Add validation/error messaging for unsupported image types
+- [ ] Review mobile layout spacing and control sizes
+- [ ] Add keyboard-accessibility pass for all controls
+- [ ] Tune graph performance for large images
+- [ ] Add export option for graph/settings snapshot
+
+Ideas backlog:
+- [ ] ______________________________________________
+- [ ] ______________________________________________
+- [ ] ______________________________________________
+
