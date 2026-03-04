@@ -7,6 +7,9 @@
   --accent: #ff4741;
   --accent-2: #2f2f35;
   --border: #27272b;
+  --section-one-height: calc(74vh + 92px);
+  --section-two-max-width: 860px;
+  --section-two-right-gutter: 18px;
 }
 
 * {
@@ -35,7 +38,8 @@ body {
   border: 2px solid var(--border);
   border-radius: 20px;
   padding: 16px;
-  max-height: calc(100vh - 40px);
+  height: var(--section-one-height);
+  max-height: var(--section-one-height);
   overflow-y: auto;
   scrollbar-width: thin;
   box-shadow: none;
@@ -109,9 +113,11 @@ body {
   padding: 12px;
   background: var(--panel-2);
   box-shadow: none;
-  width: calc(100% - 148px);
-  max-width: calc(100% - 148px);
+  width: min(calc(100% - var(--section-two-right-gutter)), var(--section-two-max-width));
+  max-width: min(calc(100% - var(--section-two-right-gutter)), var(--section-two-max-width));
+  margin-left: 0;
   margin-right: auto;
+  margin-top: 100px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 370px;
   gap: 16px;
@@ -213,28 +219,36 @@ body {
 }
 
 .artist-mini-grid-section {
-  width: calc(100% - 148px);
-  max-width: calc(100% - 148px);
+  width: min(calc(100% - var(--section-two-right-gutter)), var(--section-two-max-width));
+  max-width: min(calc(100% - var(--section-two-right-gutter)), var(--section-two-max-width));
+  margin-left: 0;
   margin-right: auto;
 }
 
 .artist-mini-grid-scroll {
+  --mini-gap: 12px;
+  width: 92%;
+  max-width: 92%;
+  margin: 0;
   max-height: none;
-  overflow: visible;
-  padding-right: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  padding: 2px 0 8px;
 }
 
 .artist-mini-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 7px;
+  grid-auto-flow: column;
+  grid-auto-columns: calc((100% - (var(--mini-gap) * 3)) / 4.4);
+  gap: var(--mini-gap);
 }
 
 .artist-mini-grid-item {
   display: flex;
   flex-direction: column;
   border: 1px solid #8f9096;
-  border-radius: 9px;
+  border-radius: 11px;
   overflow: hidden;
   background: #e2e5eb;
   cursor: pointer;
@@ -272,13 +286,13 @@ body {
 
 .artist-mini-caption {
   border-top: 1px solid #a3a4ab;
-  padding: 6px 7px 7px;
+  padding: 9px 10px 10px;
   background: #eceff4;
 }
 
 .artist-mini-title {
   color: #23242a;
-  font-size: 0.64rem;
+  font-size: 0.76rem;
   font-weight: 600;
   line-height: 1.25;
   white-space: nowrap;
@@ -287,9 +301,9 @@ body {
 }
 
 .artist-mini-year {
-  margin-top: 2px;
+  margin-top: 3px;
   color: #6d6e76;
-  font-size: 0.58rem;
+  font-size: 0.68rem;
   line-height: 1.2;
 }
 
@@ -755,6 +769,7 @@ button.secondary {
     max-width: 100%;
     grid-template-columns: 1fr;
     padding: 10px;
+    margin-top: 64px;
   }
 
   .artist-mini-grid-section {
@@ -762,14 +777,16 @@ button.secondary {
     max-width: 100%;
   }
 
-  .artist-mini-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .artist-mini-grid-scroll {
+    --mini-gap: 10px;
+    max-height: none;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 2px 0 8px;
   }
 
-  .artist-mini-grid-scroll {
-    max-height: none;
-    overflow: visible;
-    padding-right: 0;
+  .artist-mini-grid {
+    grid-auto-columns: calc((100% - var(--mini-gap)) / 1.35);
   }
 
   .palette-column {

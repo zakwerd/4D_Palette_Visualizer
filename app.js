@@ -39,7 +39,7 @@
   const ARTIST_OPTIONS = [
     { id: 'basquiat', label: 'Basquiat', searchName: 'Jean-Michel Basquiat', dataPath: './data/basquait-palettes.json' },
     { id: 'cezanne', label: 'Cezanne', searchName: 'Paul Cezanne', dataPath: './data/cezanne-palettes.json' },
-    { id: 'kandinsky', label: 'Kandinsky', searchName: 'Wassily Kandinsky', dataPath: './data/kandinsky-palettes.json' },
+    { id: 'kandinsky', label: 'Kadinsky', searchName: 'Wassily Kadinsky', dataPath: './data/kandinsky-palettes.json' },
     { id: 'vangogh', label: 'Van Gogh', searchName: 'Vincent van Gogh', dataPath: './data/van-gogh-palettes.json' },
   ];
   const DEFAULT_ARTIST_BLURBS = {
@@ -56,8 +56,8 @@
       body: "Cézanne’s palettes are structured, modulated, and architectonic. He builds form through interlocking planes of color-cool blues and greens balancing warm ochres, siennas, and muted reds-allowing hue shifts to model depth instead of relying on line or heavy shadow. Rather than dramatic contrast, he favors tonal variation and subtle temperature changes, letting strokes accumulate into stable, geometric harmony. His color is constructive: patches of pigment operate like facets, turning apples, mountains, and figures into enduring arrangements of light and structure.",
     },
     kandinsky: {
-      title: "Kandinsky's Palettes:",
-      body: "Kandinsky’s color language is abstract, musical, and structural. His palettes move between luminous primaries, dark anchors, and rhythmic contrasts, using color as an autonomous force rather than natural description. Across years, his work shifts from expressive washes to sharper geometric orchestration while preserving chromatic tension and motion.",
+      title: "Kadinsky's Palettes:",
+      body: "Kadinsky’s color language is abstract, musical, and structural. His palettes move between luminous primaries, dark anchors, and rhythmic contrasts, using color as an autonomous force rather than natural description. Across years, his work shifts from expressive washes to sharper geometric orchestration while preserving chromatic tension and motion.",
     },
   };
 
